@@ -22,7 +22,7 @@ def extract_batch_features_v2(
     tokenizer,
     model,
     device,
-    max_sequence_length: int = 256,
+    max_sequence_length: int = 512,
     tfidf_vectorizer=None,
     debug_segment_split: bool = False,
     max_debug_print: int = 2,
@@ -232,11 +232,12 @@ def featurize_hf_dataset_in_batches_v2(
     model,
     device,
     batch_size: int = 8,
-    max_sequence_length: int = 256,
+    max_sequence_length: int = 512,
     question_key: str = "question",
     answer_key: str = "answer",
     show_progress: bool = True,
-) -> Tuple[np.ndarray, List[str]]:
+    tfidf_vectorizer=None,
+) -> Tuple[np.ndarray, List[str], Any]:
     """
     Extract features from HuggingFace dataset in batches
     
@@ -250,10 +251,12 @@ def featurize_hf_dataset_in_batches_v2(
         question_key: Key for question text in dataset
         answer_key: Key for answer text in dataset
         show_progress: Show progress bar
+        tfidf_vectorizer: Pre-fitted TF-IDF vectorizer (or None to fit new on first batch)
     
     Returns:
         feature_matrix: (N, 19) numpy array
         feature_names: List of 19 feature names
+        tfidf_vectorizer: Fitted TF-IDF vectorizer (for reuse)
     """
     model.eval()
     
@@ -262,7 +265,7 @@ def featurize_hf_dataset_in_batches_v2(
     
     n_samples = len(question_texts)
     all_features = []
-    tfidf_vectorizer = None
+    # Use provided tfidf_vectorizer or start with None (will be fitted on first batch)
     
     iterator = range(0, n_samples, batch_size)
     if show_progress:
@@ -286,5 +289,5 @@ def featurize_hf_dataset_in_batches_v2(
         all_features.append(batch_features)
     
     feature_matrix = np.vstack(all_features)
-    return feature_matrix, feature_names
+    return feature_matrix, feature_names, tfidf_vectorizer
 
