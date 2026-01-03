@@ -405,6 +405,13 @@ class StorageManager:
     def load_metadata(self, model_name: str, task: str, split: str) -> Dict:
         """Load feature metadata"""
         meta_path = self.github_path / f'metadata/features_{split}_{model_name}_{task}.json'
+        if not meta_path.exists():
+            raise FileNotFoundError(
+                f"Metadata not found: {meta_path}\n"
+                f"  Model: {model_name}, Task: {task}, Split: {split}\n"
+                f"  Make sure you have run feature extraction (02_feature_extraction_separate.ipynb) "
+                f"and metadata files are present in the repository."
+            )
         with open(meta_path, 'r') as f:
             return json.load(f)
     
