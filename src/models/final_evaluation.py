@@ -146,7 +146,7 @@ def run_final_evaluation(
                 # Fit TF-IDF on train (required for test feature extraction)
                 print(f"      Fitting TF-IDF on train split...")
                 _, _, tfidf_vectorizer = featurize_hf_dataset_in_batches_v2(
-                    train_ds, hf_model, tokenizer, device,
+                    train_ds, tokenizer, hf_model, device,
                     question_key='interview_question',
                     answer_key='interview_answer',
                     batch_size=batch_size,
@@ -158,7 +158,7 @@ def run_final_evaluation(
                 # Extract test features
                 print(f"      Extracting test features...")
                 X_test, feature_names, _ = featurize_hf_dataset_in_batches_v2(
-                    test_ds, hf_model, tokenizer, device,
+                    test_ds, tokenizer, hf_model, device,
                     question_key='interview_question',
                     answer_key='interview_answer',
                     batch_size=batch_size,
