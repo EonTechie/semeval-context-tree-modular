@@ -592,7 +592,13 @@ class StorageManager:
         # Extract DataFrame if it's a Styler
         if hasattr(df, 'data'):
             df_to_save = df.data
-            styled_df = df  # Keep styled version for HTML
+            # Eğer use_paper_style=True ise, yeniden style_table_paper çağır (mapping ile)
+            # Çünkü notebook'ta display için mapping=False ile oluşturulmuş olabilir
+            if use_paper_style:
+                from ..evaluation.tables import style_table_paper
+                styled_df = style_table_paper(df_to_save, apply_column_mapping=True)
+            else:
+                styled_df = df  # Keep original styled version
         else:
             df_to_save = df
             styled_df = None
@@ -608,9 +614,9 @@ class StorageManager:
         if 'html' in formats:
             html_path = save_dir / f'{table_name}.html'
             if use_paper_style and styled_df is None:
-                # Apply paper-ready styling
+                # Apply paper-ready styling WITH column mapping for saved files
                 from ..evaluation.tables import style_table_paper
-                styled_df = style_table_paper(df_to_save)
+                styled_df = style_table_paper(df_to_save, apply_column_mapping=True)
             
             if styled_df is not None and hasattr(styled_df, 'render'):
                 # Paper-ready styled DataFrame

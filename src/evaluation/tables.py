@@ -524,7 +524,8 @@ def style_table_paper(
     metric_cols: Optional[List[str]] = None,
     precision: int = 4,
     clarity_col_name: str = 'clarity',
-    hierarchical_col_name: str = 'hierarchical_evasion_to_clarity'
+    hierarchical_col_name: str = 'hierarchical_evasion_to_clarity',
+    apply_column_mapping: bool = False
 ) -> 'pd.Styler':
     """
     Paper-ready table styling: Minimal, professional, academic-friendly
@@ -553,17 +554,17 @@ def style_table_paper(
     if df_clean.columns.name in ['task', 'Task', 'TASK']:
         df_clean.columns.name = None
     
-    # Column name mapping (paper-ready formatting)
-    COLUMN_NAME_MAPPING = {
-        'clarity': 'Clarity',
-        'evasion': 'Evasion',
-        'hierarchical_evasion_to_clarity': 'Hierarchical Mapping to Clarity'
-    }
-    
-    # Apply mapping: use mapping if exists, otherwise capitalize first letter
-    df_clean.columns = df_clean.columns.map(
-        lambda x: COLUMN_NAME_MAPPING.get(str(x).lower(), str(x).title()) if isinstance(x, str) else x
-    )
+    # Column name mapping (paper-ready formatting) - SADECE İSTENİRSE UYGULA
+    if apply_column_mapping:
+        COLUMN_NAME_MAPPING = {
+            'clarity': 'Clarity',
+            'evasion': 'Evasion',
+            'hierarchical_evasion_to_clarity': 'Hierarchical Mapping to Clarity'
+        }
+        # Apply mapping: use mapping if exists, otherwise capitalize first letter
+        df_clean.columns = df_clean.columns.map(
+            lambda x: COLUMN_NAME_MAPPING.get(str(x).lower(), str(x).title()) if isinstance(x, str) else x
+        )
     
     if metric_cols is None:
         # Auto-detect numeric columns (AFTER mapping)
@@ -682,7 +683,9 @@ def style_table_paper(
     # Build alignment styles for numeric columns (right align)
     alignment_styles = []
     for i, col in enumerate(df_clean.columns):
-        if col in metric_cols:
+        # FIX: Use string matching to avoid Index object issues
+        col_str = str(col)
+        if col_str in metric_cols_str:
             # Numeric columns: right align using nth-child selector
             # +2 because: +1 for index column (first-child), +1 for 1-based indexing
             col_selector_idx = i + 2

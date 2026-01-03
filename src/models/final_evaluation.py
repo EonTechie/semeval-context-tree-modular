@@ -464,7 +464,7 @@ def run_final_evaluation(
                     print(pivot_model.to_string())
                     
                     # Style and save table (paper-ready: bold+green for best, italic for hierarchical>clarity)
-                    styled_model = style_table_paper(pivot_model, precision=4)
+                    styled_model = style_table_paper(pivot_model, precision=4, apply_column_mapping=False)
                     storage.save_table(
                         styled_model,
                         table_name=f'final_test_model_wise_{model_name}',
@@ -495,7 +495,7 @@ def run_final_evaluation(
                     print(pivot_clf.to_string())
                     
                     # Style and save table (paper-ready: bold+green for best, italic for hierarchical>clarity)
-                    styled_clf = style_table_paper(pivot_clf, precision=4)
+                    styled_clf = style_table_paper(pivot_clf, precision=4, apply_column_mapping=False)
                     storage.save_table(
                         styled_clf,
                         table_name=f'final_test_classifier_wise_{clf_name}',
