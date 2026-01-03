@@ -320,7 +320,7 @@ def style_table(
     df: pd.DataFrame,
     metric_cols: Optional[List[str]] = None,
     precision: int = 4
-) -> pd.io.formats.style.Styler:
+) -> 'pd.Styler':
     """
     Style table with color gradients (like siparismaili01)
     
