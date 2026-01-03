@@ -441,27 +441,27 @@ def style_table(
         has_task3 = task3_col in df.columns
     
     if has_task1 and has_task3:
+        # Find column indices for Task 1 and Task 3 (once, outside the function)
+        task1_idx = None
+        task3_idx = None
+        
+        for i, col in enumerate(df.columns):
+            # Handle MultiIndex columns
+            if isinstance(df.columns, pd.MultiIndex):
+                col_name = col[-1] if isinstance(col, tuple) else str(col)
+            else:
+                col_name = col
+            
+            if col_name == task1_col:
+                task1_idx = i
+            elif col_name == task3_col:
+                task3_idx = i
+        
         # Apply comparison-based coloring: Task 1 vs Task 3
         # Create a function to apply colors based on comparison
         def color_comparison(row):
             """Apply green/red based on Task 1 vs Task 3 comparison"""
             colors = [''] * len(row)
-            
-            # Find column indices for Task 1 and Task 3
-            task1_idx = None
-            task3_idx = None
-            
-            for i, col in enumerate(df.columns):
-                # Handle MultiIndex columns
-                if isinstance(df.columns, pd.MultiIndex):
-                    col_name = col[-1] if isinstance(col, tuple) else str(col)
-                else:
-                    col_name = col
-                
-                if col_name == task1_col:
-                    task1_idx = i
-                elif col_name == task3_col:
-                    task3_idx = i
             
             if task1_idx is not None and task3_idx is not None:
                 task1_val = row.iloc[task1_idx] if pd.notna(row.iloc[task1_idx]) else None
