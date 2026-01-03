@@ -400,10 +400,11 @@ def style_table(
     task_colors: Optional[Dict[str, str]] = None
 ) -> 'pd.Styler':
     """
-    Style table with color gradients (like siparismaili01)
-    Applies comparison-based coloring: Task 1 (clarity) vs Task 3 (hierarchical_evasion_to_clarity)
-    - If Task 1 > Task 3: Task 1 = green, Task 3 = red
-    - If Task 1 < Task 3: Task 1 = red, Task 3 = green
+    Style table with custom coloring rules:
+    - Default: Gray background (except header row and first column which stay blue)
+    - If hierarchical_evasion_to_clarity > clarity: Green background
+    - If hierarchical_evasion_to_clarity <= clarity: Gray background
+    - Row with highest Macro F1: Bold font for entire row
     
     Args:
         df: DataFrame to style
@@ -425,91 +426,93 @@ def style_table(
         if col in df.columns:
             styled = styled.format({col: f"{{:.{precision}f}}"})
     
-    # Check if this is a pivot table with task columns (Task 1 vs Task 3 comparison)
-    task1_col = 'clarity'
-    task3_col = 'hierarchical_evasion_to_clarity'
+    # Find clarity and hierarchical_evasion_to_clarity columns
+    clarity_col = None
+    hierarchical_col = None
     
-    # Handle MultiIndex columns (if tasks are in column level)
-    if isinstance(df.columns, pd.MultiIndex):
-        # Extract task names from MultiIndex columns
-        task_cols_flat = [col[-1] if isinstance(col, tuple) else col for col in df.columns]
-        has_task1 = task1_col in task_cols_flat
-        has_task3 = task3_col in task_cols_flat
-    else:
-        # Simple column names
-        has_task1 = task1_col in df.columns
-        has_task3 = task3_col in df.columns
-    
-    if has_task1 and has_task3:
-        # Find column indices for Task 1 and Task 3 (once, outside the function)
-        task1_idx = None
-        task3_idx = None
-        
-        for i, col in enumerate(df.columns):
-            # Handle MultiIndex columns
-            if isinstance(df.columns, pd.MultiIndex):
-                col_name = col[-1] if isinstance(col, tuple) else str(col)
-            else:
-                col_name = col
-            
-            if col_name == task1_col:
-                task1_idx = i
-            elif col_name == task3_col:
-                task3_idx = i
-        
-        # Apply comparison-based coloring: Task 1 vs Task 3
-        # Create a function to apply colors based on comparison
-        def color_comparison(row):
-            """Apply green/red based on Task 1 vs Task 3 comparison"""
-            colors = [''] * len(row)
-            
-            if task1_idx is not None and task3_idx is not None:
-                task1_val = row.iloc[task1_idx] if pd.notna(row.iloc[task1_idx]) else None
-                task3_val = row.iloc[task3_idx] if pd.notna(row.iloc[task3_idx]) else None
-                
-                if task1_val is not None and task3_val is not None:
-                    if task1_val > task3_val:
-                        # Task 1 wins: green for Task 1, red for Task 3
-                        colors[task1_idx] = 'background-color: #90EE90'  # Light green
-                        colors[task3_idx] = 'background-color: #FFB6C1'  # Light red
-                    elif task1_val < task3_val:
-                        # Task 3 wins: red for Task 1, green for Task 3
-                        colors[task1_idx] = 'background-color: #FFB6C1'  # Light red
-                        colors[task3_idx] = 'background-color: #90EE90'  # Light green
-                    # If equal, keep default (no special coloring)
-            
-            return colors
-        
-        # Apply comparison-based coloring
-        styled = styled.apply(color_comparison, axis=1)
-        
-        # Also apply gradient to other numeric columns (if any)
+    for col in df.columns:
+        # Handle MultiIndex columns
         if isinstance(df.columns, pd.MultiIndex):
-            other_numeric_cols = [col for col in df.columns if col[-1] not in [task1_col, task3_col]]
+            col_name = col[-1] if isinstance(col, tuple) else str(col)
         else:
-            other_numeric_cols = [col for col in metric_cols if col not in [task1_col, task3_col]]
+            col_name = col
         
-        if other_numeric_cols:
-            styled = styled.background_gradient(
-                subset=other_numeric_cols,
-                cmap='RdYlGn',
-                vmin=0.0,
-                vmax=1.0
-            )
-    else:
-        # No task comparison - apply standard gradient to all numeric columns
-        if metric_cols:
-            styled = styled.background_gradient(
-                subset=metric_cols,
-                cmap='RdYlGn',  # Red-Yellow-Green gradient
-                vmin=0.0,
-                vmax=1.0
-            )
+        if col_name == 'clarity':
+            clarity_col = col
+        elif col_name == 'hierarchical_evasion_to_clarity':
+            hierarchical_col = col
     
-    # Add borders and improve readability
+    # Find row with highest Macro F1 (check clarity column first, then hierarchical)
+    max_f1_row_idx = None
+    max_f1_value = -1
+    
+    if clarity_col is not None and clarity_col in df.columns:
+        # Use clarity column for finding max
+        max_f1_value = df[clarity_col].max()
+        max_f1_row_idx = df[clarity_col].idxmax()
+    elif hierarchical_col is not None and hierarchical_col in df.columns:
+        # Fallback to hierarchical column
+        max_f1_value = df[hierarchical_col].max()
+        max_f1_row_idx = df[hierarchical_col].idxmax()
+    
+    # Apply styling function
+    def apply_cell_styles(row):
+        """Apply background colors and bold font"""
+        styles = [''] * len(row)
+        row_idx = row.name
+        
+        # Check if this is the row with highest Macro F1
+        is_max_row = (row_idx == max_f1_row_idx)
+        
+        for i, val in enumerate(row):
+            # Get column object
+            if isinstance(df.columns, pd.MultiIndex):
+                col_obj = df.columns[i]
+                col_name = col_obj[-1] if isinstance(col_obj, tuple) else str(col_obj)
+            else:
+                col_obj = df.columns[i]
+                col_name = str(col_obj)
+            
+            # Get clarity and hierarchical values for this row
+            clarity_val = None
+            hierarchical_val = None
+            
+            if clarity_col is not None and clarity_col in df.columns:
+                clarity_val = row[clarity_col]
+            if hierarchical_col is not None and hierarchical_col in df.columns:
+                hierarchical_val = row[hierarchical_col]
+            
+            # Determine background color
+            if clarity_val is not None and hierarchical_val is not None and pd.notna(clarity_val) and pd.notna(hierarchical_val):
+                if hierarchical_val > clarity_val:
+                    # Green background (hierarchical beats clarity)
+                    styles[i] = 'background-color: #90EE90'
+                else:
+                    # Gray background (hierarchical <= clarity)
+                    styles[i] = 'background-color: #D3D3D3'
+            else:
+                # Default gray for all other cells
+                styles[i] = 'background-color: #D3D3D3'
+            
+            # Apply bold font to entire row if it's the max row
+            if is_max_row:
+                if styles[i]:
+                    styles[i] += '; font-weight: bold'
+                else:
+                    styles[i] = 'font-weight: bold'
+        
+        return styles
+    
+    # Apply cell styles
+    styled = styled.apply(apply_cell_styles, axis=1)
+    
+    # Keep header row and first column blue (default pandas styling)
     styled = styled.set_table_styles([
         {'selector': 'th', 'props': [('background-color', '#4472C4'), ('color', 'white'), ('font-weight', 'bold')]},
         {'selector': 'td', 'props': [('border', '1px solid #ddd')]},
+        # First column (index) styling - keep blue/white
+        {'selector': 'th:first-child', 'props': [('background-color', '#4472C4'), ('color', 'white'), ('font-weight', 'bold')]},
+        {'selector': 'td:first-child', 'props': [('background-color', '#E7F0F8'), ('font-weight', 'bold')]},
     ])
     
     return styled
