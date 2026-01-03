@@ -662,8 +662,8 @@ def style_table_paper(
             # Text columns: left align
             styled = styled.set_properties(subset=[col], **{'text-align': 'left'})
     
-    # First column (index): left align and bold
-    styled = styled.set_properties(subset=[df_clean.index.name] if df_clean.index.name else [], **{'text-align': 'left', 'font-weight': 'bold'})
+    # Note: Index column styling is handled by table_styles below (th:first-child, td:first-child)
+    # No need to use set_properties for index column (avoids KeyError when index.name is None)
     
     # Minimal table styling (clean, professional, NO background colors)
     styled = styled.set_table_styles([
