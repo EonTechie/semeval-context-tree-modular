@@ -601,14 +601,32 @@ def style_table_paper(
             hierarchical_col = col
     
     # Find best values: Column-wise (each task's best classifier)
+    # FIX: Only mark the SINGLE best value per column (not all equal values)
     column_best = {}
+    column_best_indices = {}  # Track which row has the best value
     for col_str in metric_cols_str:
         # Find actual column object by string matching
         for actual_col in df_clean.columns:
             if str(actual_col) == col_str:
                 try:
-                    max_val = df_clean[actual_col].max()
-                    column_best[actual_col] = max_val  # Use actual_col as key
+                    # Get all non-NaN values
+                    col_values = df_clean[actual_col].dropna()
+                    if len(col_values) > 0:
+                        max_val = col_values.max()
+                        # Only mark as best if there's a clear maximum (not all equal)
+                        unique_vals = col_values.unique()
+                        if len(unique_vals) > 1:
+                            # There are different values, find the row(s) with max
+                            max_indices = col_values[col_values == max_val].index.tolist()
+                            if len(max_indices) == 1:
+                                # Single best value
+                                column_best[actual_col] = max_val
+                                column_best_indices[actual_col] = max_indices[0]
+                        elif len(col_values) == 1:
+                            # Single value, mark as best
+                            column_best[actual_col] = max_val
+                            column_best_indices[actual_col] = col_values.index[0]
+                        # If all values are equal and > 1, don't mark any as best
                 except (KeyError, ValueError):
                     pass
                 break
@@ -649,11 +667,13 @@ def style_table_paper(
                 style_parts = []
                 
                 # 1. Check if best column-wise (this task's best classifier)
-                # Use actual column object for column_best lookup
-                if col_obj in column_best:
-                    if abs(val - column_best[col_obj]) < 1e-6:
-                        style_parts.append('font-weight: bold')
-                        style_parts.append('color: #006400')  # Dark green
+                # FIX: Only apply if this is the SINGLE best value (not all equal)
+                if col_obj in column_best and col_obj in column_best_indices:
+                    # Only mark as best if this specific row has the best value
+                    if row_idx == column_best_indices[col_obj]:
+                        if abs(val - column_best[col_obj]) < 1e-6:
+                            style_parts.append('font-weight: bold')
+                            style_parts.append('color: #006400')  # Dark green
                 
                 # 2. Check if best row-wise (this classifier's best task)
                 if row_idx in row_best and abs(val - row_best[row_idx]) < 1e-6:
@@ -661,13 +681,19 @@ def style_table_paper(
                     style_parts.append('color: #006400')  # Dark green
                 
                 # 3. Check if hierarchical > clarity (italic)
+                # FIX: Ensure clarity_col is found correctly (even without column mapping)
                 if hierarchical_col is not None and clarity_col is not None:
                     if col_obj == hierarchical_col:
                         hierarchical_val = val
-                        clarity_val = row[clarity_col] if clarity_col in row.index else None
+                        # Try to get clarity value from the same row
+                        try:
+                            clarity_val = df_clean.loc[row_idx, clarity_col] if clarity_col in df_clean.columns else None
+                        except (KeyError, IndexError):
+                            clarity_val = None
                         
                         if clarity_val is not None and pd.notna(clarity_val) and pd.notna(hierarchical_val):
-                            if hierarchical_val > clarity_val:
+                            # FIX: Use proper comparison with tolerance
+                            if hierarchical_val > clarity_val + 1e-6:  # Clear improvement
                                 style_parts.append('font-style: italic')
                 
                 if style_parts:
@@ -703,11 +729,12 @@ def style_table_paper(
     
     # Minimal table styling (clean, professional, NO background colors)
     # Combine with alignment styles
+    # FIX: Index column styling - ensure proper vertical alignment
     base_styles = [
-        {'selector': 'th', 'props': [('color', '#212529'), ('font-weight', 'bold'), ('border', '1px solid #dee2e6'), ('text-align', 'center')]},
-        {'selector': 'td', 'props': [('border', '1px solid #dee2e6'), ('padding', '8px')]},
-        {'selector': 'th:first-child', 'props': [('font-weight', 'bold'), ('text-align', 'left')]},
-        {'selector': 'td:first-child', 'props': [('font-weight', 'bold'), ('text-align', 'left')]},
+        {'selector': 'th', 'props': [('color', '#212529'), ('font-weight', 'bold'), ('border', '1px solid #dee2e6'), ('text-align', 'center'), ('vertical-align', 'middle')]},
+        {'selector': 'td', 'props': [('border', '1px solid #dee2e6'), ('padding', '8px'), ('vertical-align', 'middle')]},
+        {'selector': 'th:first-child', 'props': [('font-weight', 'bold'), ('text-align', 'left'), ('vertical-align', 'middle')]},
+        {'selector': 'td:first-child', 'props': [('font-weight', 'bold'), ('text-align', 'left'), ('vertical-align', 'middle')]},
     ]
     
     # Apply all styles together
