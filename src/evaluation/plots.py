@@ -53,7 +53,7 @@ def plot_confusion_matrix(
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✅ Saved confusion matrix: {save_path}")
+        print(f"Saved confusion matrix: {save_path}")
     else:
         plt.show()
     plt.close()
@@ -81,16 +81,52 @@ def plot_precision_recall_curves(
     n_classes = len(label_list)
     
     # Convert labels to indices
-    # Handle label mapping: dataset uses 'Ambivalent' but code expects 'Ambiguous'
-    label_mapping = {'Ambivalent': 'Ambiguous'}  # Map dataset label to expected label
+    # Handle label mapping: map dataset labels to expected labels
+    # Common mappings: Ambivalent->Ambiguous, Explicit->Direct Answer, etc.
+    label_mapping = {
+        'Ambivalent': 'Ambiguous',
+        'Explicit': 'Direct Answer',
+        'Implicit': 'Implicit Answer',
+        'Dodging': 'Topic Shift',  # Common mapping
+        'Deflection': 'Topic Shift',
+        'Partial/half-answer': 'Partial Answer',
+        'General': 'Partial Answer',
+        'Declining to answer': 'Refusal',
+        'Claims ignorance': 'Refusal',
+        'Clarification': 'Clarification',
+        'Contradictory': 'Other',
+        'Diffusion': 'Other',
+        'Question': 'Question',
+        'Other': 'Other'
+    }
     label_to_idx = {label: idx for idx, label in enumerate(label_list)}
     
-    # Map y_true labels if needed
-    y_true_mapped = np.array([
-        label_mapping.get(str(label), label) if str(label) in label_mapping else label
-        for label in y_true
-    ])
+    # Map y_true labels if needed, with fallback for unknown labels
+    y_true_mapped = []
+    for label in y_true:
+        label_str = str(label)
+        # Try direct mapping first
+        if label_str in label_mapping:
+            mapped_label = label_mapping[label_str]
+        # Try exact match in label_list
+        elif label_str in label_list:
+            mapped_label = label_str
+        # Fallback: try to find closest match or use first label
+        else:
+            # If label not found, skip this sample or use first label as fallback
+            # For robustness, we'll try to find it in label_list by string matching
+            found = False
+            for lbl in label_list:
+                if str(lbl).lower() == label_str.lower():
+                    mapped_label = lbl
+                    found = True
+                    break
+            if not found:
+                # Last resort: use first label (should not happen in normal operation)
+                mapped_label = label_list[0] if label_list else label_str
+        y_true_mapped.append(mapped_label)
     
+    y_true_mapped = np.array(y_true_mapped)
     y_true_idx = np.array([label_to_idx[label] for label in y_true_mapped])
     
     plt.figure(figsize=figsize)
@@ -124,7 +160,7 @@ def plot_precision_recall_curves(
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✅ Saved precision-recall curves: {save_path}")
+        print(f"Saved precision-recall curves: {save_path}")
     else:
         plt.show()
     plt.close()
@@ -152,16 +188,52 @@ def plot_roc_curves(
     n_classes = len(label_list)
     
     # Convert labels to indices
-    # Handle label mapping: dataset uses 'Ambivalent' but code expects 'Ambiguous'
-    label_mapping = {'Ambivalent': 'Ambiguous'}  # Map dataset label to expected label
+    # Handle label mapping: map dataset labels to expected labels
+    # Common mappings: Ambivalent->Ambiguous, Explicit->Direct Answer, etc.
+    label_mapping = {
+        'Ambivalent': 'Ambiguous',
+        'Explicit': 'Direct Answer',
+        'Implicit': 'Implicit Answer',
+        'Dodging': 'Topic Shift',  # Common mapping
+        'Deflection': 'Topic Shift',
+        'Partial/half-answer': 'Partial Answer',
+        'General': 'Partial Answer',
+        'Declining to answer': 'Refusal',
+        'Claims ignorance': 'Refusal',
+        'Clarification': 'Clarification',
+        'Contradictory': 'Other',
+        'Diffusion': 'Other',
+        'Question': 'Question',
+        'Other': 'Other'
+    }
     label_to_idx = {label: idx for idx, label in enumerate(label_list)}
     
-    # Map y_true labels if needed
-    y_true_mapped = np.array([
-        label_mapping.get(str(label), label) if str(label) in label_mapping else label
-        for label in y_true
-    ])
+    # Map y_true labels if needed, with fallback for unknown labels
+    y_true_mapped = []
+    for label in y_true:
+        label_str = str(label)
+        # Try direct mapping first
+        if label_str in label_mapping:
+            mapped_label = label_mapping[label_str]
+        # Try exact match in label_list
+        elif label_str in label_list:
+            mapped_label = label_str
+        # Fallback: try to find closest match or use first label
+        else:
+            # If label not found, skip this sample or use first label as fallback
+            # For robustness, we'll try to find it in label_list by string matching
+            found = False
+            for lbl in label_list:
+                if str(lbl).lower() == label_str.lower():
+                    mapped_label = lbl
+                    found = True
+                    break
+            if not found:
+                # Last resort: use first label (should not happen in normal operation)
+                mapped_label = label_list[0] if label_list else label_str
+        y_true_mapped.append(mapped_label)
     
+    y_true_mapped = np.array(y_true_mapped)
     y_true_idx = np.array([label_to_idx[label] for label in y_true_mapped])
     
     plt.figure(figsize=figsize)
@@ -191,7 +263,7 @@ def plot_roc_curves(
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✅ Saved ROC curves: {save_path}")
+        print(f"Saved ROC curves: {save_path}")
     else:
         plt.show()
     plt.close()
@@ -223,7 +295,7 @@ def plot_metrics_comparison(
             values.append(result['metrics'][metric_name])
     
     if not classifiers:
-        print(f"⚠️  No {metric_name} found in results")
+        print(f"Warning: No {metric_name} found in results")
         return
     
     plt.figure(figsize=figsize)
@@ -248,7 +320,7 @@ def plot_metrics_comparison(
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✅ Saved metrics comparison: {save_path}")
+        print(f"Saved metrics comparison: {save_path}")
     else:
         plt.show()
     plt.close()

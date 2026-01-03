@@ -55,7 +55,7 @@ def visualize_all_evaluation(
         roc_path = None
     
     # Plot confusion matrix
-    print(f"\n📊 Plotting confusion matrix for {full_name}...")
+    print(f"\nPlotting confusion matrix for {full_name}...")
     plot_confusion_matrix(
         y_true, y_pred, label_list,
         task_name=full_name,
@@ -64,21 +64,21 @@ def visualize_all_evaluation(
     
     # Plot precision-recall curves (if probabilities available)
     if y_proba is not None:
-        print(f"📊 Plotting precision-recall curves for {full_name}...")
+        print(f"Plotting precision-recall curves for {full_name}...")
         plot_precision_recall_curves(
             y_true, y_proba, label_list,
             task_name=full_name,
             save_path=pr_path
         )
         
-        print(f"📊 Plotting ROC curves for {full_name}...")
+        print(f"Plotting ROC curves for {full_name}...")
         plot_roc_curves(
             y_true, y_proba, label_list,
             task_name=full_name,
             save_path=roc_path
         )
     else:
-        print(f"⚠️  Probabilities not available, skipping PR and ROC curves")
+        print(f"Warning: Probabilities not available, skipping PR and ROC curves")
     
     return metrics
 
