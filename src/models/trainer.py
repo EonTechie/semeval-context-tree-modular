@@ -76,7 +76,8 @@ def train_and_evaluate(
     
     # Print results table
     if print_table:
-        print_results_table(results, task_name=task_name, sort_by="Macro F1")
+        print_results_table(results, task_name=task_name, sort_by="Macro F1", 
+                          show_per_class=True, label_list=label_list)
     
     # Create plots (confusion matrix, PR curves, ROC curves)
     if create_plots:

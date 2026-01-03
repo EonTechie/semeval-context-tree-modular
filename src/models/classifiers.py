@@ -9,6 +9,10 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from typing import Dict, Any, Optional
 import numpy as np
+import warnings
+
+# Suppress LightGBM feature names warning (harmless, just informational)
+warnings.filterwarnings('ignore', message='X does not have valid feature names', category=UserWarning, module='sklearn.utils.validation')
 
 try:
     from xgboost import XGBClassifier
