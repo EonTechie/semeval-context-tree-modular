@@ -159,7 +159,6 @@ class StorageManager:
         with open(meta_path, 'w') as f:
             json.dump(metadata, f, indent=2)
         
-        print(f"Saved predictions: {npy_path}")
         return npy_path
     
     def save_probabilities(self, probabilities: np.ndarray, model_name: str, classifier: str,
@@ -190,7 +189,6 @@ class StorageManager:
         with open(meta_path, 'w') as f:
             json.dump(metadata, f, indent=2)
         
-        print(f"Saved probabilities: {npy_path}")
         return npy_path
     
     def save_fused_features(self, X: np.ndarray, models: List[str], task: str, split: str,
@@ -402,7 +400,6 @@ class StorageManager:
         results_path = self.github_path / f'results/{experiment_id}.json'
         with open(results_path, 'w') as f:
             json.dump(results_dict, f, indent=2)
-        print(f"Saved results: {results_path}")
         return results_path
     
     def load_metadata(self, model_name: str, task: str, split: str) -> Dict:
@@ -555,10 +552,8 @@ class StorageManager:
             json_results = json.loads(json.dumps(all_results, default=str))
             with open(json_path, 'w') as f:
                 json.dump(json_results, f, indent=2)
-            print(f"Saved all_results (JSON): {json_path}")
         except Exception as e:
-            print(f"WARNING: Could not save JSON version: {e}")
+            pass  # Silently skip JSON save if it fails
         
-        print(f"Saved all_results (Pickle): {pkl_path}")
         return pkl_path
 

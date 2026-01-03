@@ -37,8 +37,6 @@ def create_results_table(
                 'Weighted F1': metrics.get('weighted_f1', 0.0),
                 'Macro Precision': metrics.get('macro_precision', 0.0),
                 'Macro Recall': metrics.get('macro_recall', 0.0),
-                'Cohen Kappa': metrics.get('cohen_kappa', 0.0),
-                'Matthews CorrCoef': metrics.get('matthews_corrcoef', 0.0),
             })
         else:
             # If metrics not computed, add placeholder

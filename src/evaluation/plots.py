@@ -4,6 +4,7 @@ Plotting utilities: confusion matrix, precision-recall curves, ROC curves
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import warnings
 from sklearn.metrics import (
     precision_recall_curve,
     roc_curve,
@@ -13,6 +14,11 @@ from sklearn.metrics import (
 from typing import List, Any, Optional
 import matplotlib
 matplotlib.use('Agg')  # For Colab compatibility
+
+# Suppress sklearn warnings for missing classes in PR/ROC curves (common in imbalanced datasets)
+warnings.filterwarnings('ignore', category=UserWarning, module='sklearn.metrics._ranking')
+warnings.filterwarnings('ignore', category=UserWarning, message='No positive class found')
+warnings.filterwarnings('ignore', category=UserWarning, message='No positive samples')
 
 
 def plot_confusion_matrix(
@@ -53,7 +59,6 @@ def plot_confusion_matrix(
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Saved confusion matrix: {save_path}")
     else:
         plt.show()
     plt.close()
@@ -165,7 +170,6 @@ def plot_precision_recall_curves(
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Saved precision-recall curves: {save_path}")
     else:
         plt.show()
     plt.close()
@@ -273,7 +277,6 @@ def plot_roc_curves(
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Saved ROC curves: {save_path}")
     else:
         plt.show()
     plt.close()
@@ -330,7 +333,6 @@ def plot_metrics_comparison(
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Saved metrics comparison: {save_path}")
     else:
         plt.show()
     plt.close()

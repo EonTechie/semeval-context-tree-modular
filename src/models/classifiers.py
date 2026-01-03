@@ -137,8 +137,6 @@ def train_classifiers(
     results = {}
     
     for name, clf in classifiers.items():
-        print(f"Training {name}...")
-        
         # Train with encoded labels
         clf.fit(X_train, y_train_encoded)
         

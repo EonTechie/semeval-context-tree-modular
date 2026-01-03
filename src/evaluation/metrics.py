@@ -10,8 +10,6 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     confusion_matrix,
-    cohen_kappa_score,
-    matthews_corrcoef,
     hamming_loss,
     jaccard_score
 )
@@ -93,8 +91,6 @@ def compute_all_metrics(
     metrics["confusion_matrix"] = confusion_matrix(y_true, y_pred, labels=label_list).tolist()
     
     # Specialized metrics
-    metrics["cohen_kappa"] = float(cohen_kappa_score(y_true, y_pred))
-    metrics["matthews_corrcoef"] = float(matthews_corrcoef(y_true, y_pred))
     metrics["hamming_loss"] = float(hamming_loss(y_true, y_pred))
     
     # Jaccard score (IoU) - average across classes
