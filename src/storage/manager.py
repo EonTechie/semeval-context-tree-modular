@@ -4,6 +4,7 @@ GitHub for metadata, Drive for large data files
 """
 import json
 import numpy as np
+import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -846,17 +847,27 @@ class StorageManager:
         
         # Save LaTeX
         if 'tex' in formats or 'latex' in formats:
-            from ..evaluation.tables import export_table_latex
-            tex_path = save_dir / f'{table_name}.tex'
-            export_table_latex(df_to_save, tex_path, caption=f"Results: {table_name.replace('_', ' ').title()}")
-            saved_paths['tex'] = tex_path
+            try:
+                from ..evaluation.tables import export_table_latex
+                tex_path = save_dir / f'{table_name}.tex'
+                export_table_latex(df_to_save, tex_path, caption=f"Results: {table_name.replace('_', ' ').title()}")
+                saved_paths['tex'] = tex_path
+            except Exception as e:
+                print(f"WARNING: Could not save LaTeX table: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Save Markdown
         if 'md' in formats or 'markdown' in formats:
-            from ..evaluation.tables import export_table_markdown
-            md_path = save_dir / f'{table_name}.md'
-            export_table_markdown(df_to_save, md_path)
-            saved_paths['md'] = md_path
+            try:
+                from ..evaluation.tables import export_table_markdown
+                md_path = save_dir / f'{table_name}.md'
+                export_table_markdown(df_to_save, md_path)
+                saved_paths['md'] = md_path
+            except Exception as e:
+                print(f"WARNING: Could not save Markdown table: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Save PNG (requires matplotlib)
         if 'png' in formats:
@@ -864,15 +875,22 @@ class StorageManager:
                 import matplotlib.pyplot as plt
                 from matplotlib.backends.backend_agg import FigureCanvasAgg
                 
-                fig, ax = plt.subplots(figsize=(12, max(8, len(df_to_save) * 0.3)))
+                # Replace NaN values with empty strings for display
+                df_for_png = df_to_save.fillna("")
+                
+                fig, ax = plt.subplots(figsize=(12, max(8, len(df_for_png) * 0.3)))
                 ax.axis('tight')
                 ax.axis('off')
                 
-                # Convert DataFrame to table
+                # Convert DataFrame to table - handle NaN values
+                cell_text = []
+                for row in df_for_png.values:
+                    cell_text.append([str(val) if pd.notna(val) and val != "" else "" for val in row])
+                
                 table = ax.table(
-                    cellText=df_to_save.values,
-                    colLabels=df_to_save.columns,
-                    rowLabels=df_to_save.index,
+                    cellText=cell_text,
+                    colLabels=[str(col) for col in df_for_png.columns],
+                    rowLabels=[str(idx) for idx in df_for_png.index],
                     cellLoc='center',
                     loc='center'
                 )
@@ -887,6 +905,8 @@ class StorageManager:
                 print(f"Saved table (PNG): {png_path}")
             except Exception as e:
                 print(f"WARNING: Could not save PNG: {e}")
+                import traceback
+                traceback.print_exc()
         
         return saved_paths
     

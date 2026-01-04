@@ -849,18 +849,39 @@ def export_table_markdown(
         filepath: Path to save .md file
         precision: Decimal precision
     """
-    # Format numeric columns
-    df_formatted = df.copy()
-    for col in df_formatted.select_dtypes(include=[np.number]).columns:
-        df_formatted[col] = df_formatted[col].apply(lambda x: f"{x:.{precision}f}" if pd.notna(x) else "")
-    
-    # Convert to Markdown
-    markdown_str = df_formatted.to_markdown(index=True)
-    
-    # Save to file
-    filepath = Path(filepath)
-    filepath.parent.mkdir(parents=True, exist_ok=True)
-    with open(filepath, 'w', encoding='utf-8') as f:
-        f.write(markdown_str)
-    
-    print(f"Saved Markdown table: {filepath}")
+    try:
+        # Format numeric columns and replace NaN with empty string
+        df_formatted = df.copy()
+        for col in df_formatted.select_dtypes(include=[np.number]).columns:
+            df_formatted[col] = df_formatted[col].apply(lambda x: f"{x:.{precision}f}" if pd.notna(x) else "")
+        
+        # Replace NaN with empty string for all columns
+        df_formatted = df_formatted.fillna("")
+        
+        # Convert to Markdown - try pandas method first, fallback to manual
+        try:
+            markdown_str = df_formatted.to_markdown(index=True)
+        except AttributeError:
+            # Fallback: manual markdown generation if to_markdown() doesn't exist
+            lines = []
+            # Header
+            headers = [''] + [str(col) for col in df_formatted.columns]
+            lines.append('| ' + ' | '.join(headers) + ' |')
+            lines.append('| ' + ' | '.join(['---'] * len(headers)) + ' |')
+            # Rows
+            for idx, row in df_formatted.iterrows():
+                row_data = [str(idx)] + [str(val) for val in row.values]
+                lines.append('| ' + ' | '.join(row_data) + ' |')
+            markdown_str = '\n'.join(lines)
+        
+        # Save to file
+        filepath = Path(filepath)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(markdown_str)
+        
+        print(f"Saved Markdown table: {filepath}")
+    except Exception as e:
+        print(f"WARNING: Could not save Markdown table: {e}")
+        import traceback
+        traceback.print_exc()
