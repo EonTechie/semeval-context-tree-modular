@@ -616,17 +616,18 @@ def style_table_paper(
                     pass
                 break
     
-    # Find clarity and hierarchical columns (after mapping, search in mapped names)
+    # Find clarity and hierarchical columns (simple name-based search)
     clarity_col = None
     hierarchical_col = None
     
     for col in df_clean.columns:
-        col_name = str(col)
+        col_name = str(col).lower()
         
-        # Search in mapped column names (e.g., "Clarity", "Hierarchical Mapping to Clarity")
-        if 'clarity' in col_name.lower() and 'hierarchical' not in col_name.lower():
+        # Check for clarity column (not hierarchical)
+        if 'clarity' in col_name and 'hierarchical' not in col_name and 'mapping' not in col_name:
             clarity_col = col
-        elif 'hierarchical' in col_name.lower() or 'mapping' in col_name.lower():
+        # Check for hierarchical column
+        elif 'hierarchical' in col_name or 'mapping' in col_name:
             hierarchical_col = col
     
     # AUTO-DETECT table type from table_name (most reliable) or index name (fallback)
@@ -749,18 +750,22 @@ def style_table_paper(
                                 style_parts.append('color: #006400')  # Dark green
                 
                 # 3. Check if hierarchical > clarity (italic)
-                # FIX: Ensure clarity_col is found correctly (even without column mapping)
+                # Use column object directly (more reliable than string matching)
                 if hierarchical_col is not None and clarity_col is not None:
+                    # Check if current column is hierarchical column (by object identity)
                     if col_obj == hierarchical_col:
                         hierarchical_val = val
-                        # Try to get clarity value from the same row
+                        # Get clarity value from the same row using clarity_col object directly
                         try:
-                            clarity_val = df_clean.loc[row_idx, clarity_col] if clarity_col in df_clean.columns else None
-                        except (KeyError, IndexError):
+                            if clarity_col in df_clean.columns:
+                                clarity_val = df_clean.loc[row_idx, clarity_col]
+                            else:
+                                clarity_val = None
+                        except (KeyError, IndexError, AttributeError):
                             clarity_val = None
                         
                         if clarity_val is not None and pd.notna(clarity_val) and pd.notna(hierarchical_val):
-                            # FIX: Use proper comparison with tolerance
+                            # Apply italic if hierarchical > clarity
                             if hierarchical_val > clarity_val + 1e-6:  # Clear improvement
                                 style_parts.append('font-style: italic')
                 

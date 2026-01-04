@@ -248,6 +248,11 @@ def run_final_evaluation(
             y_dev_encoded = label_encoder.transform(y_dev)
             y_test_encoded = label_encoder.transform(y_test)
             
+            # Ensure encoded labels are numpy arrays (required for MLPClassifier)
+            y_train_encoded = np.asarray(y_train_encoded, dtype=np.int64)
+            y_dev_encoded = np.asarray(y_dev_encoded, dtype=np.int64)
+            y_test_encoded = np.asarray(y_test_encoded, dtype=np.int64)
+            
             # Combine train+dev (use encoded labels for training)
             X_train_full = np.vstack([X_train, X_dev])
             y_train_full_encoded = np.concatenate([y_train_encoded, y_dev_encoded])
