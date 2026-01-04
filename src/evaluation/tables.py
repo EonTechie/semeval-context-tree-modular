@@ -631,38 +631,28 @@ def style_table_paper(
             hierarchical_col = col
     
     # AUTO-DETECT table type from table_name (most reliable) or index name (fallback)
+    # BOTH model-wise and classifier-wise tables use column-wise best (each task's best)
     if best_direction == 'auto':
         # Priority 1: Check table_name (most reliable)
         if table_name:
             table_name_lower = str(table_name).lower()
-            if 'model_wise' in table_name_lower:
-                best_direction = 'column'  # Model-wise: Classifier × Tasks → column-wise best
-            elif 'classifier_wise' in table_name_lower:
-                best_direction = 'row'     # Classifier-wise: Model × Tasks → row-wise best
+            if 'model_wise' in table_name_lower or 'classifier_wise' in table_name_lower:
+                best_direction = 'column'  # Both: Column-wise best (each task's best)
             else:
                 # Fallback to index name detection
                 index_name = str(df_clean.index.name).lower() if df_clean.index.name else ''
-                if 'classifier' in index_name:
-                    best_direction = 'column'
-                elif 'model' in index_name:
-                    best_direction = 'row'
+                if 'classifier' in index_name or 'model' in index_name:
+                    best_direction = 'column'  # Column-wise best
                 else:
-                    best_direction = 'column'  # Default
+                    best_direction = 'column'  # Default to column-wise
         else:
             # Priority 2: Check index name
             index_name = str(df_clean.index.name).lower() if df_clean.index.name else ''
-            if 'classifier' in index_name:
-                best_direction = 'column'  # Model-wise: Classifier × Tasks → column-wise best
-            elif 'model' in index_name:
-                best_direction = 'row'     # Classifier-wise: Model × Tasks → row-wise best
+            if 'classifier' in index_name or 'model' in index_name:
+                best_direction = 'column'  # Column-wise best (each task's best)
             else:
-                # Fallback: Check index values (first few) to guess
-                sample_indices = [str(idx).lower() for idx in df_clean.index[:3] if pd.notna(idx)]
-                classifier_keywords = ['classifier', 'logistic', 'random', 'xgboost', 'lightgbm', 'mlp', 'linear', 'svc']
-                if any(any(kw in idx for kw in classifier_keywords) for idx in sample_indices):
-                    best_direction = 'column'  # Likely classifier names
-                else:
-                    best_direction = 'column'  # Default to column-wise (safer)
+                # Fallback: Default to column-wise
+                best_direction = 'column'  # Default to column-wise
     
     # Find best values based on direction
     column_best = {}
