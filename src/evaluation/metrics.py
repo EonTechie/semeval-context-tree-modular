@@ -87,16 +87,48 @@ def compute_all_metrics(
         "support": int(report["weighted avg"]["support"]),
     }
     
-    # Confusion matrix
-    metrics["confusion_matrix"] = confusion_matrix(y_true, y_pred, labels=label_list).tolist()
+    # Confusion matrix - filter labels to only include those present in y_true or y_pred
+    # This prevents ValueError when some labels don't appear in test set (e.g., annotator-based evaluation)
+    unique_true = np.unique(y_true)
+    unique_pred = np.unique(y_pred)
+    all_unique = np.unique(np.concatenate([unique_true, unique_pred]))
+    
+    # Filter label_list to only include labels that exist in data
+    if len(label_list) > 0 and isinstance(label_list[0], str):
+        # String labels - filter by what exists in data
+        existing_labels = [label for label in label_list if label in all_unique]
+    else:
+        # Encoded labels - use all_unique
+        existing_labels = sorted(all_unique.tolist()) if len(all_unique) > 0 else label_list
+    
+    if len(existing_labels) == 0:
+        # Fallback: use all_unique directly if label_list filtering resulted in empty
+        existing_labels = sorted(all_unique.tolist()) if len(all_unique) > 0 else label_list
+    
+    # Use existing_labels for confusion matrix and jaccard_score
+    try:
+        metrics["confusion_matrix"] = confusion_matrix(y_true, y_pred, labels=existing_labels).tolist()
+    except ValueError as e:
+        # If still fails, use labels=None (auto-detect from data)
+        print(f"  Warning: Could not create confusion matrix with specified labels: {e}")
+        print(f"  Using auto-detected labels from data...")
+        metrics["confusion_matrix"] = confusion_matrix(y_true, y_pred).tolist()
     
     # Specialized metrics
     metrics["hamming_loss"] = float(hamming_loss(y_true, y_pred))
     
     # Jaccard score (IoU) - average across classes
-    metrics["jaccard_score"] = float(jaccard_score(
-        y_true, y_pred, labels=label_list, average='macro', zero_division=0
-    ))
+    try:
+        metrics["jaccard_score"] = float(jaccard_score(
+            y_true, y_pred, labels=existing_labels, average='macro', zero_division=0
+        ))
+    except ValueError as e:
+        # If still fails, use labels=None (auto-detect from data)
+        print(f"  Warning: Could not compute jaccard_score with specified labels: {e}")
+        print(f"  Using auto-detected labels from data...")
+        metrics["jaccard_score"] = float(jaccard_score(
+            y_true, y_pred, average='macro', zero_division=0
+        ))
     
     return metrics
 
