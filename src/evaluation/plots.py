@@ -40,7 +40,35 @@ def plot_confusion_matrix(
         save_path: Path to save figure (optional)
         figsize: Figure size
     """
-    cm = confusion_matrix(y_true, y_pred, labels=label_list)
+    # Get unique labels from y_true and y_pred
+    unique_true = np.unique(y_true)
+    unique_pred = np.unique(y_pred)
+    all_unique = np.unique(np.concatenate([unique_true, unique_pred]))
+    
+    # Filter label_list to only include labels that exist in data
+    # This prevents ValueError when some labels don't appear in test set
+    if len(label_list) > 0 and isinstance(label_list[0], str):
+        # String labels - filter by what exists in data
+        existing_labels = [label for label in label_list if label in all_unique]
+    else:
+        # Encoded labels or empty - use all_unique
+        existing_labels = sorted(all_unique.tolist()) if len(all_unique) > 0 else label_list
+    
+    if len(existing_labels) == 0:
+        print(f"Warning: No common labels found for confusion matrix. Skipping plot.")
+        print(f"  y_true unique: {unique_true}")
+        print(f"  y_pred unique: {unique_pred}")
+        print(f"  label_list: {label_list}")
+        return
+    
+    try:
+        cm = confusion_matrix(y_true, y_pred, labels=existing_labels)
+    except ValueError as e:
+        print(f"Warning: Could not create confusion matrix: {e}")
+        print(f"  y_true unique: {unique_true}")
+        print(f"  y_pred unique: {unique_pred}")
+        print(f"  existing_labels: {existing_labels}")
+        return
     
     plt.figure(figsize=figsize)
     sns.heatmap(
@@ -48,8 +76,8 @@ def plot_confusion_matrix(
         annot=True,
         fmt='d',
         cmap='Blues',
-        xticklabels=label_list,
-        yticklabels=label_list,
+        xticklabels=existing_labels,
+        yticklabels=existing_labels,
         cbar_kws={'label': 'Count'}
     )
     plt.title(f'Confusion Matrix{f": {task_name}" if task_name else ""}')

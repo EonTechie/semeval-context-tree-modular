@@ -553,11 +553,88 @@ class StorageManager:
             raise ValueError(f"Task must be 'clarity' or 'evasion', got '{task}'")
         
         splits_path = self.data_path / f'splits/dataset_splits_{task}.pkl'
-        if not splits_path.exists():
+        
+        # Debug: Check if data_path exists and is accessible
+        if not self.data_path.exists():
             raise FileNotFoundError(
-                f"Splits file not found: {splits_path}\n"
-                f"Make sure you've run 01_data_split.ipynb for task '{task}' first."
+                f"Data path does not exist: {self.data_path}\n"
+                f"  This usually means Google Drive is not mounted correctly.\n"
+                f"  Solution: Make sure you've run 'drive.mount('/content/drive')' in your notebook."
             )
+        
+        # Check if splits directory exists
+        splits_dir = self.data_path / 'splits'
+        if not splits_dir.exists():
+            raise FileNotFoundError(
+                f"Splits directory does not exist: {splits_dir}\n"
+                f"  Data path: {self.data_path}\n"
+                f"  Solution: Run 01_data_split.ipynb first to create split files."
+            )
+        
+        if not splits_path.exists():
+            # Check for alternative file names (backward compatibility)
+            alt_paths = [
+                self.data_path / f'splits/dataset_splits.pkl',  # Old format (no task suffix)
+                self.data_path / 'splits' / f'dataset_splits_{task}.pkl',  # Explicit path
+            ]
+            
+            found_alt = None
+            for alt_path in alt_paths:
+                if alt_path.exists():
+                    found_alt = alt_path
+                    break
+            
+            if found_alt:
+                # Use alternative path but warn user
+                print(f"  Warning: Using alternative split file: {found_alt}")
+                print(f"  Expected: {splits_path}")
+                splits_path = found_alt
+            else:
+                # Provide detailed error message with debugging info
+                available_files = []
+                if splits_dir.exists():
+                    available_files = [f.name for f in splits_dir.glob('*.pkl')]
+                    # Also check absolute path
+                    try:
+                        abs_path = splits_path.resolve()
+                        abs_exists = abs_path.exists()
+                    except Exception:
+                        abs_exists = False
+                        abs_path = None
+                
+                error_msg = (
+                f"Splits file not found: {splits_path}\n"
+                    f"  Task: {task}\n"
+                    f"  Data path: {self.data_path}\n"
+                    f"  Data path exists: {self.data_path.exists()}\n"
+                    f"  Splits directory: {splits_dir}\n"
+                    f"  Splits directory exists: {splits_dir.exists()}\n"
+                    f"  Expected file: splits/dataset_splits_{task}.pkl\n"
+                )
+                if abs_path:
+                    error_msg += (
+                        f"  Absolute path: {abs_path}\n"
+                        f"  Absolute path exists: {abs_exists}\n"
+                    )
+                if available_files:
+                    error_msg += (
+                        f"  Available split files in splits/ directory:\n"
+                    )
+                    for f in available_files:
+                        error_msg += f"    - {f}\n"
+                else:
+                    error_msg += (
+                        f"  No .pkl files found in splits/ directory.\n"
+                        f"  This might indicate:\n"
+                        f"    1. Drive is not mounted correctly\n"
+                        f"    2. Files are in a different location\n"
+                        f"    3. Split files were not created yet\n"
+                    )
+                error_msg += (
+                    f"  Solution: Run 01_data_split.ipynb for task '{task}' first.\n"
+                    f"  The split file should be saved as: splits/dataset_splits_{task}.pkl"
+            )
+                raise FileNotFoundError(error_msg)
         
         # Load saved data
         with open(splits_path, 'rb') as f:
@@ -882,4 +959,104 @@ class StorageManager:
                 return {}
         else:
             return {}
+    
+    def save_tfidf_vectorizer(self, vectorizer: Any, task: str) -> Path:
+        """
+        Save TF-IDF vectorizer to cache (task-specific)
+        
+        Args:
+            vectorizer: Fitted TF-IDF vectorizer
+            task: Task name ('clarity' or 'evasion')
+        
+        Returns:
+            Path to saved pickle file
+        
+        Raises:
+            ValueError: If task is not 'clarity' or 'evasion'
+            TypeError: If vectorizer is None
+        """
+        import pickle
+        
+        # Validate task
+        if task not in ['clarity', 'evasion']:
+            raise ValueError(f"Task must be 'clarity' or 'evasion', got '{task}'")
+        
+        # Validate vectorizer
+        if vectorizer is None:
+            raise TypeError("Cannot save None vectorizer to cache")
+        
+        cache_path = self.data_path / f'cache/tfidf_vectorizer_{task}.pkl'
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            with open(cache_path, 'wb') as f:
+                pickle.dump(vectorizer, f)
+            print(f"Saved TF-IDF vectorizer to cache: {cache_path}")
+            return cache_path
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to save TF-IDF vectorizer to cache: {e}\n"
+                f"  Cache path: {cache_path}\n"
+                f"  Task: {task}"
+            ) from e
+    
+    def load_tfidf_vectorizer(self, task: str) -> Optional[Any]:
+        """
+        Load TF-IDF vectorizer from cache (task-specific)
+        
+        Args:
+            task: Task name ('clarity' or 'evasion')
+        
+        Returns:
+            Fitted TF-IDF vectorizer, or None if not found or corrupted
+        
+        Note:
+            Returns None if:
+            - Cache file does not exist
+            - Cache file is corrupted (pickle load fails)
+            - Vectorizer is None or invalid
+            
+            This allows graceful fallback to fitting a new vectorizer.
+        """
+        import pickle
+        
+        # Validate task
+        if task not in ['clarity', 'evasion']:
+            print(f"Warning: Invalid task '{task}', returning None")
+            return None
+        
+        cache_path = self.data_path / f'cache/tfidf_vectorizer_{task}.pkl'
+        
+        if not cache_path.exists():
+            return None
+        
+        try:
+            with open(cache_path, 'rb') as f:
+                vectorizer = pickle.load(f)
+            
+            # Validate loaded vectorizer
+            if vectorizer is None:
+                print(f"Warning: Loaded vectorizer is None from cache: {cache_path}")
+                return None
+            
+            # Check if vectorizer has required methods (basic validation)
+            if not hasattr(vectorizer, 'transform') or not hasattr(vectorizer, 'fit'):
+                print(f"Warning: Loaded object is not a valid vectorizer: {cache_path}")
+                return None
+            
+            print(f"Loaded TF-IDF vectorizer from cache: {cache_path}")
+            return vectorizer
+            
+        except (pickle.PickleError, EOFError, ImportError) as e:
+            # Corrupted pickle file or import error
+            print(f"Warning: Could not load TF-IDF vectorizer from cache (corrupted?): {e}")
+            print(f"  Cache path: {cache_path}")
+            print(f"  Will fit new vectorizer instead")
+            return None
+        except Exception as e:
+            # Other unexpected errors
+            print(f"Warning: Unexpected error loading TF-IDF vectorizer from cache: {e}")
+            print(f"  Cache path: {cache_path}")
+            print(f"  Will fit new vectorizer instead")
+            return None
 

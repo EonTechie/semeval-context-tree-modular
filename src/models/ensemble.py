@@ -27,7 +27,7 @@ def select_top_models_by_f1(
     Select top-K model×classifier combinations by macro F1 score
     
     Args:
-        results: Dictionary from final_evaluation or similar:
+        results: Dictionary from final evaluation (e.g., from 05_final_evaluation.ipynb) or similar:
             {model_name: {task_name: {classifier_name: {'metrics': {...}}}}}
         task: Task name (e.g., 'clarity', 'evasion')
         top_k: Number of top models to select (default: 10)
@@ -357,7 +357,7 @@ def ensemble_from_results(
     Create ensemble from final evaluation results
     
     Args:
-        results: Results dictionary from run_final_evaluation
+        results: Results dictionary from final evaluation (e.g., from 05_final_evaluation.ipynb)
         task: Task name
         top_k: Number of top models to ensemble (default: 10)
         ensemble_method: 'hard_voting', 'mean', 'weighted_mean', 'max'
