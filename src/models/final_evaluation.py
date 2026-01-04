@@ -168,9 +168,18 @@ def run_final_evaluation(
                 # Test feature'ları Drive'da yok → MUTLAKA extract et ve kaydet
                 print(f"    → Test features not found in Drive. Extracting and saving...")
                 
-                # Load splits
-                test_ds = storage.load_split('test', task=task)
-                train_ds = storage.load_split('train', task=task)
+                # Load splits (required for feature extraction)
+                # CRITICAL: Split files must exist from 01_data_split.ipynb
+                try:
+                    test_ds = storage.load_split('test', task=task)
+                    train_ds = storage.load_split('train', task=task)
+                except FileNotFoundError as e:
+                    raise FileNotFoundError(
+                        f"Cannot extract test features: Split files not found.\n"
+                        f"  Error: {e}\n"
+                        f"  Solution: Run 01_data_split.ipynb first to create split files.\n"
+                        f"  Required file: {storage.data_path / f'splits/dataset_splits_{task}.pkl'}"
+                    ) from e
                 
                 # Fit TF-IDF on train (required for test feature extraction)
                 print(f"      Fitting TF-IDF on train split...")
