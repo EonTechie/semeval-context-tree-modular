@@ -41,6 +41,66 @@ class SimpleDataset:
     
     def __iter__(self):
         return iter(self._data)
+    
+    @property
+    def column_names(self):
+        """
+        Return list of column names (keys from the first sample).
+        Mimics HuggingFace Dataset.column_names property.
+        """
+        if len(self._data) > 0:
+            return list(self._data[0].keys())
+        return []
+    
+    def select(self, indices):
+        """
+        Select samples by indices (mimics HuggingFace Dataset.select).
+        
+        Args:
+            indices: List of integer indices to select
+        
+        Returns:
+            New SimpleDataset with selected samples
+        """
+        selected_data = [self._data[i] for i in indices]
+        return SimpleDataset(selected_data)
+    
+    def remove_columns(self, column_names):
+        """
+        Remove columns from dataset (mimics HuggingFace Dataset.remove_columns).
+        
+        Args:
+            column_names: List of column names to remove
+        
+        Returns:
+            New SimpleDataset with columns removed
+        """
+        new_data = []
+        for item in self._data:
+            new_item = {k: v for k, v in item.items() if k not in column_names}
+            new_data.append(new_item)
+        return SimpleDataset(new_data)
+    
+    def add_column(self, name, column):
+        """
+        Add a new column to dataset (mimics HuggingFace Dataset.add_column).
+        
+        Args:
+            name: Column name
+            column: List of values (must match dataset length)
+        
+        Returns:
+            New SimpleDataset with column added
+        """
+        if len(column) != len(self._data):
+            raise ValueError(f"Column length {len(column)} doesn't match dataset length {len(self._data)}")
+        
+        new_data = []
+        for i, item in enumerate(self._data):
+            new_item = item.copy()
+            new_item[name] = column[i]
+            new_data.append(new_item)
+        return SimpleDataset(new_data)
 
 
 class StorageManager:
@@ -535,41 +595,15 @@ class StorageManager:
                 data_list = [data[i] for i in range(len(data))]
                 return SimpleDataset(data_list)
         
-        # BACKWARD COMPATIBILITY: If datasets not in pickle, this is an error
-        # Old pickle files that only contain indices are no longer supported
-        # because they require HuggingFace access which can timeout
+        # If we reach here, the split was not found in pickle file
+        # This means the pickle file is in an old format that only contains indices
+        # Old format is no longer supported because it requires HuggingFace access which can timeout
         raise RuntimeError(
             f"Dataset split '{split_name}' not found in pickle file: {splits_path}\n"
             f"The pickle file appears to be in an old format that only contains indices.\n"
             f"Please re-run 01_data_split.ipynb to save dataset objects in the new format.\n"
             f"The new format saves full dataset data (as lists of dicts) and does not require HuggingFace."
         )
-        
-        # Get indices for requested split
-        if split_name == 'train':
-            indices = splits_data['train_indices']
-            # Train and dev come from HuggingFace train split
-            original_split = dataset['train']
-        elif split_name == 'dev':
-            indices = splits_data['dev_indices']
-            # Train and dev come from HuggingFace train split
-            original_split = dataset['train']
-        elif split_name == 'test':
-            indices = splits_data['test_indices']
-            # Test comes from HuggingFace test split
-            original_split = dataset['test']
-        else:
-            raise ValueError(f"Unknown split name: {split_name}. Must be 'train', 'dev', or 'test'")
-        
-        # Select indices from original split
-        split_ds = original_split.select(indices.tolist())
-        
-        # For evasion: apply majority voting if not already done
-        if task == 'evasion' and not is_filtered:
-            # This shouldn't happen if splits were saved correctly, but handle it anyway
-            split_ds = build_evasion_majority_dataset(split_ds, verbose=True)
-        
-        return split_ds
     
     def save_results(self, results_dict: Dict, experiment_id: str, save_dir: Optional[str] = None) -> Path:
         """

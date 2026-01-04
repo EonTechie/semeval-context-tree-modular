@@ -449,8 +449,18 @@ def featurize_hf_dataset_in_batches_v2(
     metadata_dict = None
     if metadata_keys:
         metadata_dict = {}
+        # Get column names (works for both HuggingFace Dataset and SimpleDataset)
+        try:
+            column_names = dataset.column_names
+        except AttributeError:
+            # Fallback: get keys from first sample (for SimpleDataset or dict-based datasets)
+            if len(dataset) > 0:
+                column_names = list(dataset[0].keys()) if isinstance(dataset[0], dict) else []
+            else:
+                column_names = []
+        
         for feature_name, dataset_key in metadata_keys.items():
-            if dataset_key in dataset.column_names:
+            if dataset_key in column_names:
                 metadata_dict[feature_name] = dataset[dataset_key]
     
     all_features = []
@@ -706,8 +716,18 @@ def featurize_model_independent_features(
     metadata_dict = None
     if metadata_keys:
         metadata_dict = {}
+        # Get column names (works for both HuggingFace Dataset and SimpleDataset)
+        try:
+            column_names = dataset.column_names
+        except AttributeError:
+            # Fallback: get keys from first sample (for SimpleDataset or dict-based datasets)
+            if len(dataset) > 0:
+                column_names = list(dataset[0].keys()) if isinstance(dataset[0], dict) else []
+            else:
+                column_names = []
+        
         for feature_name, dataset_key in metadata_keys.items():
-            if dataset_key in dataset.column_names:
+            if dataset_key in column_names:
                 metadata_dict[feature_name] = dataset[dataset_key]
     
     iterator = range(0, n_samples, batch_size)

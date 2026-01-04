@@ -75,7 +75,17 @@ def build_evasion_majority_dataset(
         Filtered dataset with majority-voted evasion labels
     """
     # If dataset already has a usable evasion_label, return as-is
-    if label_column in dataset.column_names:
+    # Get column names safely (works for both HuggingFace Dataset and SimpleDataset)
+    try:
+        column_names = dataset.column_names
+    except AttributeError:
+        # Fallback: get keys from first sample (for SimpleDataset or dict-based datasets)
+        if len(dataset) > 0:
+            column_names = list(dataset[0].keys()) if isinstance(dataset[0], dict) else []
+        else:
+            column_names = []
+    
+    if label_column in column_names:
         sample_value = dataset[0].get(label_column, None)
         if sample_value is not None and str(sample_value).strip() != "":
             if verbose:
@@ -118,7 +128,17 @@ def build_evasion_majority_dataset(
         filtered_dataset = [dataset[i] for i in keep_indices]
     
     # Add/update evasion_label column
-    if hasattr(filtered_dataset, 'remove_columns') and label_column in filtered_dataset.column_names:
+    # Get column names safely
+    try:
+        filtered_column_names = filtered_dataset.column_names
+    except AttributeError:
+        # Fallback: get keys from first sample
+        if len(filtered_dataset) > 0:
+            filtered_column_names = list(filtered_dataset[0].keys()) if isinstance(filtered_dataset[0], dict) else []
+        else:
+            filtered_column_names = []
+    
+    if hasattr(filtered_dataset, 'remove_columns') and label_column in filtered_column_names:
         filtered_dataset = filtered_dataset.remove_columns([label_column])
     
     if hasattr(filtered_dataset, 'add_column'):
