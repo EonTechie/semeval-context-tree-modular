@@ -84,6 +84,35 @@ def run_final_evaluation(
     if classifiers is None:
         classifiers = get_classifier_dict(random_state=random_state)
     
+    # ========================================================================
+    # CRITICAL: Create ALL output directories upfront to prevent FileNotFoundError
+    # This ensures all directories exist before any save operations
+    # Only for FinalResultsType1 (5. notebook), not affecting other notebooks
+    # ========================================================================
+    if save_results or create_plots:
+        # Drive directories (for large files: plots, predictions, tables, results)
+        plots_dir = storage.data_path / 'results/FinalResultsType1/plots'
+        predictions_dir = storage.data_path / 'results/FinalResultsType1/predictions'
+        tables_dir = storage.data_path / 'results/FinalResultsType1/tables'
+        results_dir = storage.data_path / 'results/FinalResultsType1'
+        
+        # GitHub directories (for metadata: JSON results)
+        metadata_results_dir = storage.github_path / 'results/FinalResultsType1Results'
+        
+        # Create all directories
+        plots_dir.mkdir(parents=True, exist_ok=True)
+        predictions_dir.mkdir(parents=True, exist_ok=True)
+        tables_dir.mkdir(parents=True, exist_ok=True)
+        results_dir.mkdir(parents=True, exist_ok=True)
+        metadata_results_dir.mkdir(parents=True, exist_ok=True)
+        
+        print("Created all output directories:")
+        print(f"  Drive: {plots_dir}")
+        print(f"  Drive: {predictions_dir}")
+        print(f"  Drive: {tables_dir}")
+        print(f"  Drive: {results_dir}")
+        print(f"  GitHub: {metadata_results_dir}")
+    
     print("="*80)
     print("FINAL EVALUATION: YARIŞMAYA UYGUN TEK FONKSİYON")
     print("="*80)
@@ -251,27 +280,28 @@ def run_final_evaluation(
                 # 2. Show confusion matrix immediately after report
                 if create_plots:
                     from ..evaluation.plots import plot_confusion_matrix
+                    # Directory already created at function start
+                    plots_dir = storage.data_path / 'results/FinalResultsType1/plots'
                     plot_confusion_matrix(
                         y_test, y_test_pred, label_list,
                         task_name=f"TEST - {model_key} - {task} - {clf_name}",
-                        save_path=str(storage.data_path / 'results/FinalResultsType1/plots' / 
-                                     f'confusion_matrix_{clf_name}_TEST_{model_key}_{task}.png')
+                        save_path=str(plots_dir / f'confusion_matrix_{clf_name}_TEST_{model_key}_{task}.png')
                     )
                 
                 # 3. Create other plots (PR/ROC) - save only, don't display (to avoid clutter)
                 if create_plots and y_test_proba is not None:
                     from ..evaluation.plots import plot_precision_recall_curves, plot_roc_curves
+                    # Directory already created at function start
+                    plots_dir = storage.data_path / 'results/FinalResultsType1/plots'
                     plot_precision_recall_curves(
                         y_test, y_test_proba, label_list,
                         task_name=f"TEST - {model_key} - {task} - {clf_name}",
-                        save_path=str(storage.data_path / 'results/FinalResultsType1/plots' / 
-                                     f'precision_recall_{clf_name}_TEST_{model_key}_{task}.png')
+                        save_path=str(plots_dir / f'precision_recall_{clf_name}_TEST_{model_key}_{task}.png')
                     )
                     plot_roc_curves(
                         y_test, y_test_proba, label_list,
                         task_name=f"TEST - {model_key} - {task} - {clf_name}",
-                        save_path=str(storage.data_path / 'results/FinalResultsType1/plots' / 
-                                     f'roc_{clf_name}_TEST_{model_key}_{task}.png')
+                        save_path=str(plots_dir / f'roc_{clf_name}_TEST_{model_key}_{task}.png')
                     )
                 
                 task_results[clf_name] = {
