@@ -364,14 +364,25 @@ These features are extracted from text only and are shared across all models.
 
 ---
 
-## 🎯 Four Evaluation Methodologies
+## 🎯 Three Final Evaluation Methodologies
 
-This repository implements **four distinct evaluation methodologies**, each with different feature selection strategies and ensemble approaches. All methodologies are evaluated on the **test set** (held-out, never used for training or development).
+This repository implements **three distinct final evaluation methodologies** on the **test set** (held-out, never used for training or development). Each methodology uses different feature selection strategies and ensemble approaches.
 
-### Methodology 1: Basic Individual Model Evaluation (Final Evaluation Type 1)
+**Experimental Setup**: 
+- **6 Transformer Models**: BERT, BERT-Political, BERT-Ambiguity, RoBERTa, DeBERTa, XLNet
+- **6 Classifiers**: LogisticRegression, LinearSVC, RandomForest, MLP, XGBoost, LightGBM
+- **2 Tasks**: Clarity (3 classes), Evasion (9 classes)
+
+---
+
+### Methodology 1: Individual Model Baseline Evaluation
 
 **Notebook**: `05_final_evaluation.py`  
-**Description**: The simplest baseline methodology. Each of the 6 models is evaluated separately with each of the 6 classifiers, using all 25 features.
+**Description**: Baseline evaluation where each of the 6 models is evaluated separately with each of the 6 classifiers, using all 25 features per model. No feature selection or ensemble.
+
+**Experimental Design**: 
+- **6 models** × **6 classifiers** × **2 tasks** = **72 model-classifier-task combinations**
+- Each model uses its own 25 features (7 model-dependent + 18 model-independent)
 
 **Process**:
 1. Extract 25 features for each model on test set
@@ -379,7 +390,7 @@ This repository implements **four distinct evaluation methodologies**, each with
 3. Evaluate each model×classifier combination on test set
 4. Generate results tables and visualizations
 
-**Feature Selection**: None (uses all 25 features)
+**Feature Selection**: None (uses all 25 features per model)
 
 **Ensemble Strategy**: None (individual model results only)
 
@@ -392,81 +403,85 @@ This repository implements **four distinct evaluation methodologies**, each with
 - **Tables**: `results/FinalResultsType1/tables/`
 - **Metadata**: `results/FinalResultsType1Results/FINAL_TEST_{model}_{task}.json`
 
-**Total Combinations**: 6 models × 6 classifiers × 2 tasks = **72 model-classifier-task combinations**
+**Total Results**: **72 model-classifier-task combinations**
 
 ---
 
-### Methodology 2: Development Set Evaluation (Train/Test Split)
-
-**Notebook**: `03_train_evaluate.ipynb`  
-**Description**: Evaluates models on the development set (not test set). This is used for model selection and hyperparameter tuning before final test evaluation.
-
-**Process**:
-1. Extract 25 features for each model on train and dev sets
-2. Train on train set
-3. Evaluate on dev set (used for model selection)
-4. Generate results tables comparing classifiers
-
-**Feature Selection**: None (uses all 25 features)
-
-**Ensemble Strategy**: None (individual model results only)
-
-**Evaluation Set**: Development set (not test set - this is an intermediate step)
-
-**Results Location** (Google Drive):
-- **Predictions**: `predictions/pred_dev_{model}_{classifier}_{task}.npy`
-- **Probabilities**: `features/probabilities/probs_dev_{model}_{classifier}_{task}.npy`
-- **Plots**: `plots/{model}_{task}_{classifier}/`
-- **Results**: `results/{model}_{task}_separate.json`
-
-**Purpose**: This methodology is **not a final evaluation** but rather a development step to:
-- Compare classifier performance on dev set
-- Select best model×classifier combinations
-- Guide feature selection in Methodology 3
-
----
-
-### Methodology 3: Ablation Study with Classifier-Specific Feature Selection (Final Evaluation Type 2)
+### Methodology 2: Ablation Study with Classifier-Specific Feature Selection and Weighted Ensemble
 
 **Notebook**: `03_5_ablation_study.py`  
-**Description**: Comprehensive ablation study with classifier-specific feature selection. Each classifier gets 40 features selected via greedy forward selection from 60 early fusion features. Results include both hard label predictions and weighted average ensemble from probabilities.
+**Description**: Comprehensive ablation study with classifier-specific feature selection. Each classifier gets 40 features selected via greedy forward selection from 60 early fusion features. This methodology produces **three distinct result types**: (1) individual classifier hard label predictions, (2) same hard labels as separate evaluation, and (3) weighted average ensemble from probabilities.
+
+**Prerequisite Step (Development Evaluation)**: 
+- **Notebook**: `03_train_evaluate.ipynb`
+- **Purpose**: Development set evaluation (not final evaluation) used for model selection and to guide feature selection
+- **Process**: Train on train set, evaluate on dev set (6 models × 6 classifiers × 2 tasks)
+- **Note**: This is **not a separate methodology** but rather a development step that precedes Methodology 2
+
+**Experimental Design**:
+- **60 Early Fusion Features**: 18 model-independent + 42 model-dependent (6 models × 7 features)
+- **40 Features per Classifier**: Selected via greedy forward selection (global top 20 + classifier-specific greedy 20)
+- **6 classifiers** × **2 tasks** = **12 classifier-task combinations** for individual results
+- **2 tasks** = **2 ensemble results** (one per task)
 
 **Process**:
 
-#### Step 1: Single-Feature Ablation
+#### Step 1: Development Set Evaluation (Prerequisite)
+- Extract 25 features for each model on train and dev sets
+- Train on train set, evaluate on dev set
+- Compare classifier performance to guide feature selection
+- **Output**: `predictions/pred_dev_{model}_{classifier}_{task}.npy`
+
+#### Step 2: Single-Feature Ablation
 - Evaluate each of the 25 features individually across all 36 model×classifier combinations
 - Compute statistics: min, median, mean, std, max F1
 - Calculate weighted score: `0.5 * mean_f1 + 0.3 * best_f1 + 0.2 * (1 - normalized_std)`
 - Rank features by weighted score
 
-#### Step 2: Early Fusion Feature Creation (60 features)
+#### Step 3: Early Fusion Feature Creation (60 features)
 - **18 model-independent features** (shared across all models)
 - **42 model-dependent features** (6 models × 7 features each)
 - Total: **60 features** via concatenation
 
-#### Step 3: Classifier-Specific Feature Selection
+#### Step 4: Classifier-Specific Feature Selection
 - **Global Top 20**: Selected from weighted score ranking (across all models)
 - **Classifier-Specific Greedy 20**: Greedy forward selection for each classifier (starts with global top 20, adds up to 20 more)
 - **Final Feature Set**: 40 features per classifier (global 20 + classifier-specific greedy 20)
 
-#### Step 4: Training and Evaluation
+#### Step 5: Training and Evaluation on Test Set
 - Train on Train+Dev combined data
 - Evaluate on **test set** (final evaluation)
 - Each classifier uses its own 40 selected features
 
-#### Step 5: Weighted Average Ensemble
-- Collect probabilities from all classifiers
-- Weight each classifier by its Macro F1 score on test set
-- Compute weighted average: `ensemble_proba = Σ(weight_i * proba_i) / Σ(weight_i)`
+#### Step 6: Three Result Types
+
+**Result Type 1: Individual Classifier Hard Label Predictions**
+- Each classifier produces hard label predictions using its own 40 selected features
+- **6 classifiers** × **2 tasks** = **12 classifier-task combinations**
+- **Output**: `predictions/{classifier}_{task}_predictions.npy`
+
+**Result Type 2: Same Hard Labels (Separate Evaluation)**
+- Same 12 hard label predictions from Result Type 1, but evaluated separately as individual classifier results
+- Used for comparing individual classifier performance
+- **Output**: Same files as Result Type 1, but with separate metrics
+
+**Result Type 3: Weighted Average Ensemble from Probabilities**
+- Collect probabilities from all 6 classifiers
+- Weight each classifier by its Macro F1 score on test set: `weight_i = MacroF1_i / Σ(MacroF1_j)`
+- Compute weighted average: `ensemble_proba = Σ(weight_i * proba_i)`
 - Generate hard labels from weighted average probabilities: `argmax(ensemble_proba)`
+- **2 tasks** = **2 ensemble results** (one per task)
+- **Output**: 
+  - `predictions/ensemble_hard_labels_from_weighted_proba_{task}.npy`
+  - `probabilities/ensemble_weighted_average_probabilities_{task}.npy`
 
 **Feature Selection**: 
 - **40 features per classifier** (selected via greedy forward selection)
 - Global top 20 + classifier-specific greedy 20
 
 **Ensemble Strategy**: 
-- **Hard Labels**: Individual classifier predictions (40 features each)
-- **Weighted Average Ensemble**: Probability-weighted ensemble (weights = Macro F1 scores)
+- **Result Type 1 & 2**: Individual classifier hard label predictions (no ensemble)
+- **Result Type 3**: Weighted average ensemble from probabilities (weights = Macro F1 scores)
 
 **Evaluation Set**: Test set (final evaluation)
 
@@ -476,27 +491,28 @@ This repository implements **four distinct evaluation methodologies**, each with
   - `feature_ranking_{task}.csv` (feature rankings with statistics)
   - `selected_features_all.json` (classifier-specific feature selections)
   - `greedy_trajectory_{model}_{task}_{classifier}.csv` (greedy selection trajectories)
-- **Classifier-Specific Results**: `results/FinalResultsType2/classifier_specific/`
+- **Result Type 1 & 2 (Individual Classifier Hard Labels)**: `results/FinalResultsType2/classifier_specific/`
   - **Hard Labels**: `predictions/{classifier}_{task}_predictions.npy`
   - **Probabilities**: `probabilities/{classifier}_{task}_probabilities.npy`
   - **Metrics**: `metrics/ensemble_evaluation_metrics_{task}.json`
-- **Ensemble Results**:
+- **Result Type 3 (Weighted Average Ensemble)**: `results/FinalResultsType2/classifier_specific/`
   - **Hard Labels from Weighted Proba**: `predictions/ensemble_hard_labels_from_weighted_proba_{task}.npy`
   - **Weighted Average Probabilities**: `probabilities/ensemble_weighted_average_probabilities_{task}.npy`
   - **Ensemble Weights**: `metrics/ensemble_classifier_weights_{task}.json`
 
-**Total Evaluations**:
-- **Hard Labels**: 6 classifiers × 2 tasks = **12 classifier-task combinations**
-- **Ensemble**: 2 tasks = **2 ensemble results** (one per task)
+**Total Results**:
+- **Result Type 1 & 2**: **12 classifier-task combinations** (6 classifiers × 2 tasks)
+- **Result Type 3**: **2 ensemble results** (one per task)
+- **Total**: **14 distinct result sets** (12 individual + 2 ensemble)
 
-**Key Innovation**: This methodology uses **classifier-specific feature selection**, meaning each classifier gets features optimized for its own learning algorithm (e.g., RandomForest may prefer different features than LogisticRegression).
+**Key Innovation**: This methodology uses **classifier-specific feature selection**, meaning each classifier gets features optimized for its own learning algorithm (e.g., RandomForest may prefer different features than LogisticRegression). The three result types allow comprehensive evaluation: individual classifier performance (Type 1 & 2) and ensemble performance (Type 3).
 
 ---
 
-### Methodology 4: Early Fusion with All 60 Features (Final Evaluation Type 3)
+### Methodology 3: Early Fusion Baseline Evaluation
 
 **Notebook**: `0_4_early_fusion.py`  
-**Description**: Early fusion of all 60 features (18 model-independent + 42 model-dependent from 6 models) evaluated with all 6 classifiers. No feature selection - uses all 60 features.
+**Description**: Early fusion of all 60 features (18 model-independent + 42 model-dependent from 6 models) evaluated with all 6 classifiers. No feature selection - uses all 60 features. Baseline for comparison with Methodology 2's feature selection approach.
 
 **Process**:
 
@@ -527,13 +543,18 @@ This repository implements **four distinct evaluation methodologies**, each with
   - `final_summary_detailed.csv` (all metrics)
 - **Results**: `results/FinalResultsType3/final_results_type3.json`
 
-**Total Combinations**: 6 classifiers × 2 tasks = **12 classifier-task combinations**
+**Experimental Design**: 
+- **60 Early Fusion Features**: 18 model-independent + 42 model-dependent (6 models × 7 features)
+- **6 classifiers** × **2 tasks** = **12 classifier-task combinations**
+- All classifiers use the same 60 features (no feature selection)
+
+**Total Results**: **12 classifier-task combinations** (6 classifiers × 2 tasks)
 
 **Additional Evaluations**:
 - **Hierarchical Evasion → Clarity**: Maps evasion predictions to clarity labels
 - **Annotator-Based Clarity**: Evaluates against annotator1/2/3 clarity labels (mapped from evasion)
 
-**Key Innovation**: This methodology uses **early fusion** (feature-level concatenation) to combine information from all 6 models into a single 60-dimensional feature vector, allowing classifiers to learn cross-model patterns.
+**Key Innovation**: This methodology uses **early fusion** (feature-level concatenation) to combine information from all 6 models into a single 60-dimensional feature vector, allowing classifiers to learn cross-model patterns. Serves as baseline for comparison with Methodology 2's classifier-specific feature selection (40 features per classifier).
 
 ---
 
@@ -541,10 +562,11 @@ This repository implements **four distinct evaluation methodologies**, each with
 
 | Methodology | Features | Feature Selection | Ensemble | Evaluation Set | Total Results |
 |------------|----------|------------------|----------|----------------|---------------|
-| **Method 1** | 25 per model | None | None | Test | 72 combinations |
-| **Method 2** | 25 per model | None | None | Dev (intermediate) | Dev set results |
-| **Method 3** | 40 per classifier | Greedy (global 20 + classifier-specific 20) | Weighted average | Test | 12 + 2 ensemble |
-| **Method 4** | 60 (early fusion) | None | None | Test | 12 combinations |
+| **Method 1: Individual Model Baseline** | 25 per model | None | None | Test | 72 combinations (6 models × 6 classifiers × 2 tasks) |
+| **Method 2: Ablation Study** | 40 per classifier | Greedy (global 20 + classifier-specific 20) | Weighted average (Result Type 3) | Test | 14 result sets (12 individual + 2 ensemble) |
+| **Method 3: Early Fusion Baseline** | 60 (early fusion) | None | None | Test | 12 combinations (6 classifiers × 2 tasks) |
+
+**Note**: Development set evaluation (`03_train_evaluate.ipynb`) is a prerequisite step for Methodology 2, not a separate methodology. It evaluates 6 models × 6 classifiers × 2 tasks on the development set for model selection and feature selection guidance.
 
 ---
 
@@ -556,10 +578,10 @@ semeval-context-tree-modular/
 │   ├── 00_setup.ipynb                    # Repository setup and Drive mount
 │   ├── 01_data_split.ipynb               # Dataset splitting (Train/Dev/Test)
 │   ├── 02_feature_extraction_separate.ipynb  # Feature extraction per model
-│   ├── 03_train_evaluate.ipynb            # Methodology 2: Dev set evaluation
-│   ├── 03_5_ablation_study.py             # Methodology 3: Ablation study
-│   ├── 0_4_early_fusion.py               # Methodology 4: Early fusion
-│   └── 05_final_evaluation.py             # Methodology 1: Basic evaluation
+│   ├── 03_train_evaluate.ipynb            # Prerequisite: Dev set evaluation (for Methodology 2)
+│   ├── 03_5_ablation_study.py             # Methodology 2: Ablation study with classifier-specific selection
+│   ├── 0_4_early_fusion.py               # Methodology 3: Early fusion baseline
+│   └── 05_final_evaluation.py             # Methodology 1: Individual model baseline
 ├── src/                    # Python source code
 │   ├── data/               # Dataset loading and splitting
 │   ├── features/           # Feature extraction and fusion
@@ -606,22 +628,23 @@ Extract 25 Context Tree features for each transformer model separately.
 - `features/raw/X_{split}_{model}_{task}.npy` (feature matrices)
 - `metadata/features_{split}_{model}_{task}.json` (feature metadata)
 
-### 4. Development Set Evaluation (`03_train_evaluate.ipynb`) - Methodology 2
-Train and evaluate on development set (for model selection).
+### 4. Development Set Evaluation (`03_train_evaluate.ipynb`) - Prerequisite for Methodology 2
+Train and evaluate on development set (for model selection and feature selection guidance). This is **not a final evaluation** but a prerequisite step.
 
 **Outputs**:
 - Predictions: `predictions/pred_dev_{model}_{classifier}_{task}.npy`
 - Probabilities: `features/probabilities/probs_dev_{model}_{classifier}_{task}.npy`
 - Results: `results/{model}_{task}_separate.json`
 
-### 5. Ablation Study (`03_5_ablation_study.py`) - Methodology 3
-Comprehensive feature ablation and classifier-specific feature selection.
+### 5. Ablation Study (`03_5_ablation_study.py`) - Methodology 2
+Comprehensive feature ablation and classifier-specific feature selection with three result types.
 
 **Outputs**:
 - Ablation results: `results/FinalResultsType2/ablation/`
-- Classifier-specific results: `results/FinalResultsType2/classifier_specific/`
+- Individual classifier results (Type 1 & 2): `results/FinalResultsType2/classifier_specific/predictions/`
+- Weighted ensemble results (Type 3): `results/FinalResultsType2/classifier_specific/predictions/ensemble_*.npy`
 
-### 6. Early Fusion (`0_4_early_fusion.py`) - Methodology 4
+### 6. Early Fusion (`0_4_early_fusion.py`) - Methodology 3
 Early fusion of 60 features evaluated with all classifiers.
 
 **Outputs**:
@@ -651,13 +674,13 @@ All results are stored in **Google Drive** at `/content/drive/MyDrive/semeval_da
 - Tables: `tables/`
 - Metadata: `results/FinalResultsType1Results/FINAL_TEST_{model}_{task}.json`
 
-### Methodology 2 (Dev Set Evaluation)
+### Development Set Evaluation (Prerequisite for Methodology 2)
 **Drive Path**: `results/` and `predictions/`
 - Predictions: `predictions/pred_dev_{model}_{classifier}_{task}.npy`
 - Probabilities: `features/probabilities/probs_dev_{model}_{classifier}_{task}.npy`
 - Results: `results/{model}_{task}_separate.json`
 
-### Methodology 3 (Ablation Study)
+### Methodology 2 (Ablation Study with Classifier-Specific Selection)
 **Drive Path**: `results/FinalResultsType2/`
 - **Ablation**: `ablation/`
   - `single_feature_{task}.csv`
@@ -673,7 +696,7 @@ All results are stored in **Google Drive** at `/content/drive/MyDrive/semeval_da
   - Probabilities: `probabilities/ensemble_weighted_average_probabilities_{task}.npy`
   - Weights: `metrics/ensemble_classifier_weights_{task}.json`
 
-### Methodology 4 (Early Fusion)
+### Methodology 3 (Early Fusion Baseline)
 **Drive Path**: `results/FinalResultsType3/`
 - Test features: `test/X_test_60feat_{task}.npy`
 - Predictions: `predictions/pred_test_{classifier}_{task}.npy`
@@ -738,12 +761,12 @@ Implements early fusion by concatenating features from multiple models.
 1. **Setup**: Run `00_setup.ipynb` to clone repository and mount Google Drive
 2. **Data Splitting**: Run `01_data_split.ipynb` to create train/dev/test splits
 3. **Feature Extraction**: Run `02_feature_extraction_separate.ipynb` to extract 25 features for each model
-4. **Development Evaluation**: Run `03_train_evaluate.ipynb` (Methodology 2) for dev set results
-5. **Ablation Study**: Run `03_5_ablation_study.py` (Methodology 3) for classifier-specific feature selection
-6. **Early Fusion**: Run `0_4_early_fusion.py` (Methodology 4) for 60-feature early fusion
-7. **Final Evaluation**: Run `05_final_evaluation.py` (Methodology 1) for basic test set evaluation
+4. **Development Evaluation**: Run `03_train_evaluate.ipynb` (prerequisite for Methodology 2) for dev set results
+5. **Ablation Study**: Run `03_5_ablation_study.py` (Methodology 2) for classifier-specific feature selection with three result types
+6. **Early Fusion**: Run `0_4_early_fusion.py` (Methodology 3) for 60-feature early fusion baseline
+7. **Final Evaluation**: Run `05_final_evaluation.py` (Methodology 1) for individual model baseline evaluation
 
-**⚠️ CRITICAL**: Test set is **ONLY** accessed in final evaluation notebooks (Methodologies 1, 3, and 4). Do not access test set in development notebooks.
+**⚠️ CRITICAL**: Test set is **ONLY** accessed in final evaluation notebooks (Methodologies 1, 2, and 3). Do not access test set in development notebooks.
 
 ---
 
