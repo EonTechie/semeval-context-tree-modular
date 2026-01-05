@@ -52,26 +52,61 @@ def compute_all_metrics(
         ),
     }
     
-    report = classification_report(
-        y_true,
-        y_pred,
-        labels=label_list,
-        digits=4,
-        output_dict=True,
-        zero_division=0,
-    )
+    # CRITICAL FIX: Check if y_true/y_pred are integers or strings
+    # If integers, don't pass labels parameter (sklearn auto-detects)
+    # If strings, pass label_list as labels
+    is_numeric = np.issubdtype(y_true.dtype, np.integer) or np.issubdtype(y_pred.dtype, np.integer)
     
-    # Per-class metrics
-    per_class = {}
-    for label in label_list:
-        label_key = str(label)
-        per_class[label] = {
-            "precision": float(report[label_key]["precision"]),
-            "recall": float(report[label_key]["recall"]),
-            "f1": float(report[label_key]["f1-score"]),
-            "support": int(report[label_key]["support"]),
-        }
-        metrics[f"{label}_f1"] = float(report[label_key]["f1-score"])
+    if is_numeric:
+        # y_true/y_pred are integers - don't pass labels, sklearn will auto-detect
+        report = classification_report(
+            y_true,
+            y_pred,
+            # labels parameter removed for integer labels
+            digits=4,
+            output_dict=True,
+            zero_division=0,
+        )
+        
+        # Map integer indices to string labels
+        unique_labels = sorted(np.unique(np.concatenate([y_true, y_pred])).tolist())
+        
+        # Per-class metrics - map integer indices to string labels
+        per_class = {}
+        for idx, label in enumerate(label_list):
+            # sklearn uses integer keys (0, 1, 2, ...) when y_true/y_pred are integers
+            label_key = str(idx)
+            if label_key in report:
+                per_class[label] = {
+                    "precision": float(report[label_key]["precision"]),
+                    "recall": float(report[label_key]["recall"]),
+                    "f1": float(report[label_key]["f1-score"]),
+                    "support": int(report[label_key]["support"]),
+                }
+                metrics[f"{label}_f1"] = float(report[label_key]["f1-score"])
+    else:
+        # y_true/y_pred are strings - pass label_list as labels
+        report = classification_report(
+            y_true,
+            y_pred,
+            labels=label_list,
+            digits=4,
+            output_dict=True,
+            zero_division=0,
+        )
+        
+        # Per-class metrics - use string keys directly
+        per_class = {}
+        for label in label_list:
+            label_key = str(label)
+            if label_key in report:
+                per_class[label] = {
+                    "precision": float(report[label_key]["precision"]),
+                    "recall": float(report[label_key]["recall"]),
+                    "f1": float(report[label_key]["f1-score"]),
+                    "support": int(report[label_key]["support"]),
+                }
+                metrics[f"{label}_f1"] = float(report[label_key]["f1-score"])
     
     metrics["per_class"] = per_class
     metrics["macro_avg_detail"] = {
@@ -148,12 +183,31 @@ def print_classification_report(
     else:
         print("Classification Report")
     print(f"{'='*60}")
-    print(classification_report(
-        y_true,
-        y_pred,
-        labels=label_list,
-        digits=4,
-        zero_division=0
-    ))
+    
+    # CRITICAL FIX: Same fix as compute_all_metrics
+    is_numeric = np.issubdtype(y_true.dtype, np.integer) or np.issubdtype(y_pred.dtype, np.integer)
+    
+    if is_numeric:
+        # y_true/y_pred are integers - don't pass labels, use target_names for display
+        unique_labels = sorted(np.unique(np.concatenate([y_true, y_pred])).tolist())
+        # Map integer indices to string labels for display
+        target_names = [str(label_list[i]) if i < len(label_list) else f"Class {i}" for i in unique_labels]
+        print(classification_report(
+            y_true,
+            y_pred,
+            target_names=target_names,
+            digits=4,
+            zero_division=0
+        ))
+    else:
+        # y_true/y_pred are strings - pass label_list as labels
+        print(classification_report(
+            y_true,
+            y_pred,
+            labels=label_list,
+            digits=4,
+            zero_division=0
+        ))
+    
     print(f"{'='*60}\n")
 
