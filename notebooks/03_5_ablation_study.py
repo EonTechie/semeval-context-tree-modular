@@ -950,18 +950,12 @@ print("  ✓ All results saved to Google Drive")
 # ============================================================================
 # CLASSIFIER-SPECIFIC FEATURE SELECTION: Global Top 20 + Classifier-Specific Greedy 20
 # ============================================================================
-# This cell performs classifier-specific feature selection on 60 early fusion features:
-# - **60 Features**: 18 model-independent + 6 models × 7 model-dependent
-# - **Global Top 20**: Selected from 60 features using 6 classifiers (single-feature ablation)
-# - **Classifier-Specific Greedy 20**: Selected via greedy forward selection for each classifier
-# - **Final Feature Set**: 40 features per classifier (global 20 + classifier-specific greedy 20)
-# - **Training**: Train+Dev combined for final training
-# - **Evaluation**: Test set evaluation
-# - **Weighted Ensemble**: Combines probabilities from all classifiers using Macro F1 weights
+# CHECKPOINT ENABLED: Her adımda kayıt yapılır, tekrar çalıştırıldığında kaldığı yerden devam eder
 
 import numpy as np
 import json
 import pandas as pd
+import pickle
 from pathlib import Path
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.pipeline import Pipeline
@@ -978,318 +972,350 @@ from src.models.classifiers import get_classifier_dict
 from src.evaluation.metrics import compute_all_metrics
 
 # ========================================================================
-# STEP 1: Create 60 Feature Names (with model prefixes for model-dependent features)
+# CHECKPOINT DIRECTORY SETUP
+# ========================================================================
+results_dir_type2 = storage.data_path / 'results/FinalResultsType2/classifier_specific'
+checkpoint_dir = results_dir_type2 / 'checkpoint'
+checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+predictions_dir = results_dir_type2 / 'predictions'
+probabilities_dir = results_dir_type2 / 'probabilities'
+metrics_dir = results_dir_type2 / 'metrics'
+ablation_60_dir = results_dir_type2
+
+predictions_dir.mkdir(parents=True, exist_ok=True)
+probabilities_dir.mkdir(parents=True, exist_ok=True)
+metrics_dir.mkdir(parents=True, exist_ok=True)
+ablation_60_dir.mkdir(parents=True, exist_ok=True)
+
+# ========================================================================
+# HELPER FUNCTIONS FOR CHECKPOINT
+# ========================================================================
+def load_checkpoint(filepath):
+    """Load checkpoint file if exists"""
+    if filepath.exists():
+        try:
+            if filepath.suffix == '.pkl':
+                with open(filepath, 'rb') as f:
+                    return pickle.load(f)
+            elif filepath.suffix == '.json':
+                with open(filepath, 'r') as f:
+                    return json.load(f)
+            elif filepath.suffix == '.csv':
+                return pd.read_csv(filepath)
+            elif filepath.suffix == '.npy':
+                return np.load(filepath)
+        except Exception as e:
+            print(f"    ⚠ Warning: Could not load {filepath.name}: {e}")
+            return None
+    return None
+
+def save_checkpoint(data, filepath):
+    """Save checkpoint file"""
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if filepath.suffix == '.pkl':
+            with open(filepath, 'wb') as f:
+                pickle.dump(data, f)
+        elif filepath.suffix == '.json':
+            with open(filepath, 'w') as f:
+                json.dump(data, f, indent=2)
+        elif filepath.suffix == '.csv':
+            if isinstance(data, pd.DataFrame):
+                data.to_csv(filepath, index=False)
+            else:
+                pd.DataFrame(data).to_csv(filepath, index=False)
+        elif filepath.suffix == '.npy':
+            np.save(filepath, data)
+    except Exception as e:
+        print(f"    ⚠ Warning: Could not save {filepath.name}: {e}")
+
+# ========================================================================
+# STEP 1: Create 60 Feature Names
 # ========================================================================
 print("\n" + "="*80)
 print("STEP 1: CREATE 60 FEATURE NAMES")
 print("="*80)
 
-# Get base feature names
-indep_feature_names = get_model_independent_feature_names()  # 18 features
-dep_feature_names = get_model_dependent_feature_names()  # 7 features
+# Checkpoint for feature names
+fused_feature_names_60_path = checkpoint_dir / 'fused_feature_names_60.json'
+feature_name_to_idx_60_path = checkpoint_dir / 'feature_name_to_idx_60.json'
 
-# Create 60 feature names: [18 model-independent | 6 models × 7 model-dependent]
-fused_feature_names_60 = indep_feature_names.copy()  # 18 model-independent
+fused_feature_names_60 = load_checkpoint(fused_feature_names_60_path)
+feature_name_to_idx_60 = load_checkpoint(feature_name_to_idx_60_path)
 
-# Add model-dependent features with model prefix
-MODELS_60 = ['bert', 'bert_political', 'bert_ambiguity', 'roberta', 'deberta', 'xlnet']
-for model in MODELS_60:
-    for dep_name in dep_feature_names:
-        fused_feature_names_60.append(f"{model}_{dep_name}")
+if fused_feature_names_60 is None:
+    # Get base feature names
+    indep_feature_names = get_model_independent_feature_names()  # 18 features
+    dep_feature_names = get_model_dependent_feature_names()  # 7 features
 
-print(f"✓ Created 60 feature names:")
-print(f"  - Model-independent: {len(indep_feature_names)} features")
-print(f"  - Model-dependent: {len(MODELS_60)} models × {len(dep_feature_names)} features = {len(MODELS_60) * len(dep_feature_names)} features")
+    # Create 60 feature names
+    fused_feature_names_60 = indep_feature_names.copy()
+    MODELS_60 = ['bert', 'bert_political', 'bert_ambiguity', 'roberta', 'deberta', 'xlnet']
+    for model in MODELS_60:
+        for dep_name in dep_feature_names:
+            fused_feature_names_60.append(f"{model}_{dep_name}")
+
+    feature_name_to_idx_60 = {name: idx for idx, name in enumerate(fused_feature_names_60)}
+
+    save_checkpoint(fused_feature_names_60, fused_feature_names_60_path)
+    save_checkpoint(feature_name_to_idx_60, feature_name_to_idx_60_path)
+    print(f"✓ Created and saved 60 feature names")
+else:
+    print(f"✓ Loaded 60 feature names from checkpoint")
+
+print(f"  - Model-independent: 18 features")
+print(f"  - Model-dependent: 6 models × 7 features = 42 features")
 print(f"  - Total: {len(fused_feature_names_60)} features")
-print(f"\n  First 5 features: {fused_feature_names_60[:5]}")
-print(f"  Last 5 features: {fused_feature_names_60[-5:]}")
-
-# Create feature name to index mapping
-feature_name_to_idx_60 = {name: idx for idx, name in enumerate(fused_feature_names_60)}
 
 # ========================================================================
-# STEP 2: Load 60 Features for Train/Dev/Test (from early fusion)
+# STEP 2: Load 60 Features for Train/Dev/Test
 # ========================================================================
 print("\n" + "="*80)
 print("STEP 2: LOAD 60 FEATURES (EARLY FUSION)")
 print("="*80)
 
-# Tasks for this evaluation
-TASKS_60 = ['clarity', 'hierarchical_evasion_to_clarity']  # 2 tasks
-
-# Store 60 features for each task
+TASKS_60 = ['clarity', 'hierarchical_evasion_to_clarity']
 features_60 = {}  # {task: {'train': X_train_60, 'dev': X_dev_60, 'test': X_test_60}}
 
-for task in TASKS_60:
-    print(f"\n{'-'*60}")
-    print(f"Task: {task.upper()}")
-    print(f"{'-'*60}")
+# Checkpoint for features
+features_60_path = checkpoint_dir / 'features_60.pkl'
+features_60 = load_checkpoint(features_60_path)
 
-    # Determine split task (hierarchical uses evasion splits)
-    split_task = 'evasion' if task == 'hierarchical_evasion_to_clarity' else task
+if features_60 is None:
+    features_60 = {}
 
-    # Load model-independent features
-    X_train_indep = storage.load_model_independent_features('train', task=split_task)
-    X_dev_indep = storage.load_model_independent_features('dev', task=split_task)
+    for task in TASKS_60:
+        print(f"\n{'-'*60}")
+        print(f"Task: {task.upper()}")
+        print(f"{'-'*60}")
 
-    # CRITICAL FIX: Test features may be in different locations
-    # Try multiple paths: FinalResultsType1/test, early fusion test_features, or standard location
-    X_test_indep = None
+        split_task = 'evasion' if task == 'hierarchical_evasion_to_clarity' else task
 
-    # Try 1: FinalResultsType1/test (from notebook 5)
-    test_indep_path_type1 = storage.data_path / f'results/FinalResultsType1/test/X_test_independent_{split_task}.npy'
-    if test_indep_path_type1.exists():
-        X_test_indep = np.load(test_indep_path_type1)
-        print(f"  ✓ Loaded test model-independent features from FinalResultsType1: {X_test_indep.shape}")
-    else:
-        # Try 2: Early fusion test_features directory
-        test_indep_path_early = storage.data_path / f'results/FinalResultsType3/test_features/X_test_independent_{split_task}.npy'
-        if test_indep_path_early.exists():
-            X_test_indep = np.load(test_indep_path_early)
-            print(f"  ✓ Loaded test model-independent features from early fusion: {X_test_indep.shape}")
+        # Load model-independent features
+        X_train_indep = storage.load_model_independent_features('train', task=split_task)
+        X_dev_indep = storage.load_model_independent_features('dev', task=split_task)
+
+        # Load test model-independent features
+        X_test_indep = None
+        test_indep_path_type1 = storage.data_path / f'results/FinalResultsType1/test/X_test_independent_{split_task}.npy'
+        if test_indep_path_type1.exists():
+            X_test_indep = np.load(test_indep_path_type1)
+            print(f"  ✓ Loaded test model-independent features from FinalResultsType1: {X_test_indep.shape}")
         else:
-            # Try 3: Standard location
-            try:
-                X_test_indep = storage.load_model_independent_features('test', task=split_task)
-                print(f"  ✓ Loaded test model-independent features from standard location: {X_test_indep.shape}")
-            except FileNotFoundError:
-                # Try 4: Extract if not found
-                print(f"  ⚠ Test model-independent features not found. Extracting...")
-                from src.features.extraction import featurize_model_independent_features
-                from transformers import pipeline
-
-                test_ds = storage.load_split('test', task=split_task)
-
-                # Load sentiment pipeline
+            test_indep_path_early = storage.data_path / f'results/FinalResultsType3/test_features/X_test_independent_{split_task}.npy'
+            if test_indep_path_early.exists():
+                X_test_indep = np.load(test_indep_path_early)
+                print(f"  ✓ Loaded test model-independent features from early fusion: {X_test_indep.shape}")
+            else:
                 try:
+                    X_test_indep = storage.load_model_independent_features('test', task=split_task)
+                    print(f"  ✓ Loaded test model-independent features from standard location: {X_test_indep.shape}")
+                except FileNotFoundError:
+                    print(f"  ⚠ Test model-independent features not found. Extracting...")
+                    from src.features.extraction import featurize_model_independent_features
+                    from transformers import pipeline
+
+                    test_ds = storage.load_split('test', task=split_task)
                     sentiment_pipeline = pipeline(
                         "sentiment-analysis",
                         model="cardiffnlp/twitter-roberta-base-sentiment-latest",
                         device=0 if torch.cuda.is_available() else -1,
                         return_all_scores=True
+                    ) if torch.cuda.is_available() else None
+
+                    metadata_keys = {
+                        'inaudible': 'inaudible',
+                        'multiple_questions': 'multiple_questions',
+                        'affirmative_questions': 'affirmative_questions'
+                    }
+
+                    X_test_indep, _ = featurize_model_independent_features(
+                        test_ds, question_key='interview_question', answer_key='interview_answer',
+                        batch_size=32, show_progress=True, sentiment_pipeline=sentiment_pipeline,
+                        metadata_keys=metadata_keys,
                     )
-                except Exception as e:
-                    print(f"    ⚠ Could not load sentiment pipeline: {e}")
-                    sentiment_pipeline = None
 
-                metadata_keys = {
-                    'inaudible': 'inaudible',
-                    'multiple_questions': 'multiple_questions',
-                    'affirmative_questions': 'affirmative_questions'
-                }
+                    test_indep_path_type1.parent.mkdir(parents=True, exist_ok=True)
+                    np.save(test_indep_path_type1, X_test_indep)
+                    print(f"  ✓ Extracted and saved test model-independent features: {X_test_indep.shape}")
 
-                X_test_indep, _ = featurize_model_independent_features(
-                    test_ds,
-                    question_key='interview_question',
-                    answer_key='interview_answer',
-                    batch_size=32,
-                    show_progress=True,
-                    sentiment_pipeline=sentiment_pipeline,
-                    metadata_keys=metadata_keys,
-                )
+                    if sentiment_pipeline is not None:
+                        del sentiment_pipeline
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
 
-                # Save to FinalResultsType1/test for future use
-                test_indep_path_type1.parent.mkdir(parents=True, exist_ok=True)
-                np.save(test_indep_path_type1, X_test_indep)
-                print(f"  ✓ Extracted and saved test model-independent features: {X_test_indep.shape}")
+        # Load model-dependent features
+        model_dep_train_list = []
+        model_dep_dev_list = []
+        model_dep_test_list = []
 
-                # Clean up sentiment pipeline
-                if sentiment_pipeline is not None:
-                    del sentiment_pipeline
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+        MODELS_60 = ['bert', 'bert_political', 'bert_ambiguity', 'roberta', 'deberta', 'xlnet']
+        for model in MODELS_60:
+            X_train_full = storage.load_features(model, split_task, 'train')
+            X_dev_full = storage.load_features(model, split_task, 'dev')
 
-    # Load model-dependent features from each model
-    model_dep_train_list = []
-    model_dep_dev_list = []
-    model_dep_test_list = []
+            X_test_full = None
+            test_feature_path_type1 = storage.data_path / f'results/FinalResultsType1/test/X_{model}_{split_task}_test.npy'
+            if test_feature_path_type1.exists():
+                X_test_full = np.load(test_feature_path_type1)
+                print(f"    ✓ Loaded {model} test features from FinalResultsType1: {X_test_full.shape}")
+            else:
+                try:
+                    X_test_full = storage.load_features(model, split_task, 'test')
+                    print(f"    ✓ Loaded {model} test features from standard location: {X_test_full.shape}")
+                except FileNotFoundError:
+                    raise FileNotFoundError(
+                        f"Test features not found for model '{model}' and task '{split_task}'.\n"
+                        f"  Checked locations:\n"
+                        f"    1. {test_feature_path_type1}\n"
+                        f"    2. Standard storage location\n"
+                        f"  Please run notebook 5 (Final Evaluation) or early fusion notebook to extract test features first."
+                    )
 
-    for model in MODELS_60:
-        # Load full features and extract model-dependent portion (first 7)
-        X_train_full = storage.load_features(model, split_task, 'train')
-        X_dev_full = storage.load_features(model, split_task, 'dev')
+            model_dep_train_list.append(X_train_full[:, :7])
+            model_dep_dev_list.append(X_dev_full[:, :7])
+            model_dep_test_list.append(X_test_full[:, :7])
 
-        # CRITICAL FIX: Test features may be in different locations
-        # Try multiple paths: FinalResultsType1/test, or standard location
-        X_test_full = None
+        X_train_dep_concat = np.hstack(model_dep_train_list)
+        X_dev_dep_concat = np.hstack(model_dep_dev_list)
+        X_test_dep_concat = np.hstack(model_dep_test_list)
 
-        # Try 1: FinalResultsType1/test (from notebook 5)
-        test_feature_path_type1 = storage.data_path / f'results/FinalResultsType1/test/X_{model}_{split_task}_test.npy'
-        if test_feature_path_type1.exists():
-            X_test_full = np.load(test_feature_path_type1)
-            print(f"    ✓ Loaded {model} test features from FinalResultsType1: {X_test_full.shape}")
-        else:
-            # Try 2: Standard location
-            try:
-                X_test_full = storage.load_features(model, split_task, 'test')
-                print(f"    ✓ Loaded {model} test features from standard location: {X_test_full.shape}")
-            except FileNotFoundError:
-                # If not found, we'll need to extract (but this requires GPU and models)
-                # For now, raise an error with helpful message
-                raise FileNotFoundError(
-                    f"Test features not found for model '{model}' and task '{split_task}'.\n"
-                    f"  Checked locations:\n"
-                    f"    1. {test_feature_path_type1}\n"
-                    f"    2. Standard storage location\n"
-                    f"  Please run notebook 5 (Final Evaluation) or early fusion notebook to extract test features first."
-                )
+        X_train_60 = np.hstack([X_train_indep, X_train_dep_concat])
+        X_dev_60 = np.hstack([X_dev_indep, X_dev_dep_concat])
+        X_test_60 = np.hstack([X_test_indep, X_test_dep_concat])
 
-        # Extract model-dependent portion (first 7 features)
-        model_dep_train_list.append(X_train_full[:, :7])
-        model_dep_dev_list.append(X_dev_full[:, :7])
-        model_dep_test_list.append(X_test_full[:, :7])
+        features_60[task] = {
+            'train': X_train_60,
+            'dev': X_dev_60,
+            'test': X_test_60
+        }
 
-    # Concatenate model-dependent features
-    X_train_dep_concat = np.hstack(model_dep_train_list)  # (N, 42)
-    X_dev_dep_concat = np.hstack(model_dep_dev_list)  # (N, 42)
-    X_test_dep_concat = np.hstack(model_dep_test_list)  # (N, 42)
+        print(f"  Train: {X_train_60.shape[0]} samples, {X_train_60.shape[1]} features")
+        print(f"  Dev: {X_dev_60.shape[0]} samples, {X_dev_60.shape[1]} features")
+        print(f"  Test: {X_test_60.shape[0]} samples, {X_test_60.shape[1]} features")
 
-    # Final concatenation: [18 Model-Independent | 42 Model-Dependent] = 60 features
-    X_train_60 = np.hstack([X_train_indep, X_train_dep_concat])  # (N, 60)
-    X_dev_60 = np.hstack([X_dev_indep, X_dev_dep_concat])  # (N, 60)
-    X_test_60 = np.hstack([X_test_indep, X_test_dep_concat])  # (N, 60)
-
-    features_60[task] = {
-        'train': X_train_60,
-        'dev': X_dev_60,
-        'test': X_test_60
-    }
-
-    print(f"  Train: {X_train_60.shape[0]} samples, {X_train_60.shape[1]} features")
-    print(f"  Dev: {X_dev_60.shape[0]} samples, {X_dev_60.shape[1]} features")
-    print(f"  Test: {X_test_60.shape[0]} samples, {X_test_60.shape[1]} features")
+    save_checkpoint(features_60, features_60_path)
+    print(f"\n✓ Saved features_60 to checkpoint")
+else:
+    print(f"✓ Loaded features_60 from checkpoint")
+    for task in TASKS_60:
+        X_train_60 = features_60[task]['train']
+        X_dev_60 = features_60[task]['dev']
+        X_test_60 = features_60[task]['test']
+        print(f"  {task}: Train={X_train_60.shape}, Dev={X_dev_60.shape}, Test={X_test_60.shape}")
 
 # ========================================================================
-# STEP 3: Select Global Top 20 Features (60 feature'lı sistem üzerinde 6 classifier ile)
+# STEP 3: Select Global Top 20 Features
 # ========================================================================
 print("\n" + "="*80)
 print("STEP 3: SELECT GLOBAL TOP 20 FEATURES (60 FEATURE'LI SİSTEM ÜZERİNDE)")
 print("="*80)
-print("60 feature'lı sistem üzerinde 6 classifier ile single-feature ablation yapılıyor...")
 
-# Load classifiers
-classifiers_60 = get_classifier_dict(random_state=42)
+# Checkpoint paths
+df_ablation_60_path = ablation_60_dir / 'ablation_results_60_features.csv'
+df_stats_60_path = ablation_60_dir / 'feature_ranking_60_features.csv'
+global_top_20_dict_path = checkpoint_dir / 'global_top_20_dict.json'
 
-# Store ablation results for 60 features
-ablation_results_60 = []  # {task, classifier, feature_name, macro_f1}
+# Load checkpoints
+df_ablation_60 = load_checkpoint(df_ablation_60_path)
+df_stats_60 = load_checkpoint(df_stats_60_path)
+global_top_20_dict = load_checkpoint(global_top_20_dict_path)
 
-for task in TASKS_60:
-    print(f"\n{'-'*60}")
-    print(f"Task: {task.upper()}")
-    print(f"{'-'*60}")
+if df_ablation_60 is None or df_stats_60 is None or global_top_20_dict is None:
+    print("60 feature'lı sistem üzerinde 6 classifier ile single-feature ablation yapılıyor...")
 
-    # Load features and labels
-    X_train_60 = features_60[task]['train']
-    X_dev_60 = features_60[task]['dev']
+    classifiers_60 = get_classifier_dict(random_state=42)
+    ablation_results_60 = []
 
-    # Load labels
-    split_task = 'evasion' if task == 'hierarchical_evasion_to_clarity' else task
-    label_key = 'clarity_label' if task == 'hierarchical_evasion_to_clarity' else ('clarity_label' if task == 'clarity' else 'evasion_label')
+    for task in TASKS_60:
+        print(f"\n{'-'*60}")
+        print(f"Task: {task.upper()}")
+        print(f"{'-'*60}")
 
-    train_ds = storage.load_split('train', task=split_task)
-    dev_ds = storage.load_split('dev', task=split_task)
+        X_train_60 = features_60[task]['train']
+        X_dev_60 = features_60[task]['dev']
 
-    y_train = np.array([train_ds[i][label_key] for i in range(len(train_ds))])
-    y_dev = np.array([dev_ds[i][label_key] for i in range(len(dev_ds))])
+        split_task = 'evasion' if task == 'hierarchical_evasion_to_clarity' else task
+        label_key = 'clarity_label' if task == 'hierarchical_evasion_to_clarity' else ('clarity_label' if task == 'clarity' else 'evasion_label')
 
-    # Encode labels
-    le = LabelEncoder()
-    y_train_encoded = le.fit_transform(y_train)
-    y_dev_encoded = le.transform(y_dev)
+        train_ds = storage.load_split('train', task=split_task)
+        dev_ds = storage.load_split('dev', task=split_task)
 
-    print(f"  Train: {len(y_train)} samples")
-    print(f"  Dev: {len(y_dev)} samples")
-    print(f"  Features: {X_train_60.shape[1]} features (60 feature'lı sistem)")
+        y_train = np.array([train_ds[i][label_key] for i in range(len(train_ds))])
+        y_dev = np.array([dev_ds[i][label_key] for i in range(len(dev_ds))])
 
-    # For each classifier, evaluate each feature individually
-    for clf_name, clf in classifiers_60.items():
-        print(f"  Classifier: {clf_name}...")
+        le = LabelEncoder()
+        y_train_encoded = le.fit_transform(y_train)
+        y_dev_encoded = le.transform(y_dev)
 
-        for feature_idx, feature_name in enumerate(fused_feature_names_60):
-            # Select only this feature
-            X_train_single = X_train_60[:, [feature_idx]]
-            X_dev_single = X_dev_60[:, [feature_idx]]
+        print(f"  Train: {len(y_train)} samples")
+        print(f"  Dev: {len(y_dev)} samples")
+        print(f"  Features: {X_train_60.shape[1]} features")
 
-            # Train and evaluate
-            pipe = Pipeline([("scaler", StandardScaler()), ("clf", clone(clf))])
-            pipe.fit(X_train_single, y_train_encoded)
-            pred = pipe.predict(X_dev_single)
-            macro_f1 = f1_score(y_dev_encoded, pred, average='macro')
+        for clf_name, clf in classifiers_60.items():
+            print(f"  Classifier: {clf_name}...")
 
-            ablation_results_60.append({
-                'task': task,
-                'classifier': clf_name,
-                'feature': feature_name,
-                'feature_idx': feature_idx,
-                'macro_f1': float(macro_f1)
-            })
+            for feature_idx, feature_name in enumerate(fused_feature_names_60):
+                X_train_single = X_train_60[:, [feature_idx]]
+                X_dev_single = X_dev_60[:, [feature_idx]]
 
-    print(f"  ✓ Completed ablation for {task}: {len(classifiers_60)} classifiers × {len(fused_feature_names_60)} features = {len(classifiers_60) * len(fused_feature_names_60)} evaluations")
+                pipe = Pipeline([("scaler", StandardScaler()), ("clf", clone(clf))])
+                pipe.fit(X_train_single, y_train_encoded)
+                pred = pipe.predict(X_dev_single)
+                macro_f1 = f1_score(y_dev_encoded, pred, average='macro')
 
-# Calculate statistics for each feature across all 6 classifiers
-print("\n" + "="*80)
-print("Calculating weighted scores for 60 features...")
-print("="*80)
+                ablation_results_60.append({
+                    'task': task,
+                    'classifier': clf_name,
+                    'feature': feature_name,
+                    'feature_idx': feature_idx,
+                    'macro_f1': float(macro_f1)
+                })
 
-df_ablation_60 = pd.DataFrame(ablation_results_60)
+        print(f"  ✓ Completed ablation for {task}: {len(classifiers_60)} classifiers × {len(fused_feature_names_60)} features = {len(classifiers_60) * len(fused_feature_names_60)} evaluations")
 
-# Calculate statistics for each feature×task combination
-df_stats_60 = df_ablation_60.groupby(['task', 'feature'])['macro_f1'].agg([
-    'min',      # Minimum F1
-    'median',   # Median F1
-    'mean',     # Mean F1
-    'std',      # Standard deviation
-    'max',      # Maximum F1
-    'count'     # Number of evaluations
-]).reset_index()
+    print("\nCalculating weighted scores for 60 features...")
 
-df_stats_60.columns = ['task', 'feature', 'min_f1', 'median_f1', 'mean_f1', 'std_f1', 'best_f1', 'runs']
+    df_ablation_60 = pd.DataFrame(ablation_results_60)
 
-# Calculate weighted score (same formula as Cell 5)
-EPSILON = 1e-6
-df_stats_60['normalized_std'] = df_stats_60['std_f1'] / (df_stats_60['mean_f1'] + EPSILON)
-df_stats_60['weighted_score'] = (
-    0.5 * df_stats_60['mean_f1'] +
-    0.3 * df_stats_60['best_f1'] +
-    0.2 * (1 - df_stats_60['normalized_std'])
-)
+    df_stats_60 = df_ablation_60.groupby(['task', 'feature'])['macro_f1'].agg([
+        'min', 'median', 'mean', 'std', 'max', 'count'
+    ]).reset_index()
 
-# Sort by weighted_score (descending)
-df_stats_60 = df_stats_60.sort_values(['task', 'weighted_score'], ascending=[True, False])
+    df_stats_60.columns = ['task', 'feature', 'min_f1', 'median_f1', 'mean_f1', 'std_f1', 'best_f1', 'runs']
 
-# Select global top 20 for each task
-global_top_20_dict = {}  # {task: [feature_names]}
+    EPSILON = 1e-6
+    df_stats_60['normalized_std'] = df_stats_60['std_f1'] / (df_stats_60['mean_f1'] + EPSILON)
+    df_stats_60['weighted_score'] = (
+        0.5 * df_stats_60['mean_f1'] +
+        0.3 * df_stats_60['best_f1'] +
+        0.2 * (1 - df_stats_60['normalized_std'])
+    )
 
-for task in TASKS_60:
-    df_task_stats = df_stats_60[df_stats_60['task'] == task].copy()
+    df_stats_60 = df_stats_60.sort_values(['task', 'weighted_score'], ascending=[True, False])
 
-    if len(df_task_stats) == 0:
-        print(f"  ⚠ No stats found for task '{task}', using top 20 from all features")
-        global_top_20_dict[task] = fused_feature_names_60[:20]
-        continue
+    global_top_20_dict = {}
+    for task in TASKS_60:
+        df_task_stats = df_stats_60[df_stats_60['task'] == task].copy()
+        if len(df_task_stats) == 0:
+            global_top_20_dict[task] = fused_feature_names_60[:20]
+        else:
+            global_top_20_dict[task] = df_task_stats.head(20)['feature'].tolist()
 
-    # Get top 20 features by weighted_score
-    top_20_features = df_task_stats.head(20)['feature'].tolist()
-    global_top_20_dict[task] = top_20_features
+        print(f"\n  {task.upper()} - Global Top 20 Features:")
+        for i, feat in enumerate(global_top_20_dict[task][:10], 1):
+            row = df_task_stats[df_task_stats['feature'] == feat].iloc[0]
+            print(f"    {i:2d}. {feat}")
+            print(f"        weighted_score={row['weighted_score']:.4f}, mean_f1={row['mean_f1']:.4f}, best_f1={row['best_f1']:.4f}")
+        print(f"    ... (showing first 10 of 20)")
 
-    print(f"\n  {task.upper()} - Global Top 20 Features (60 feature'lı sistem üzerinde):")
-    for i, feat in enumerate(top_20_features[:10], 1):
-        row = df_task_stats[df_task_stats['feature'] == feat].iloc[0]
-        print(f"    {i:2d}. {feat}")
-        print(f"        weighted_score={row['weighted_score']:.4f}, mean_f1={row['mean_f1']:.4f}, best_f1={row['best_f1']:.4f}")
-    print(f"    ... (showing first 10 of 20)")
-
-# Save ablation results for 60 features
-ablation_60_dir = storage.data_path / 'results/FinalResultsType2/classifier_specific'
-ablation_60_dir.mkdir(parents=True, exist_ok=True)
-
-# Save ablation results
-df_ablation_60.to_csv(ablation_60_dir / 'ablation_results_60_features.csv', index=False)
-df_stats_60.to_csv(ablation_60_dir / 'feature_ranking_60_features.csv', index=False)
-
-print(f"\n✓ Saved ablation results:")
-print(f"  - {ablation_60_dir / 'ablation_results_60_features.csv'}")
-print(f"  - {ablation_60_dir / 'feature_ranking_60_features.csv'}")
+    save_checkpoint(df_ablation_60, df_ablation_60_path)
+    save_checkpoint(df_stats_60, df_stats_60_path)
+    save_checkpoint(global_top_20_dict, global_top_20_dict_path)
+    print(f"\n✓ Saved STEP 3 results to checkpoint")
+else:
+    print(f"✓ Loaded STEP 3 results from checkpoint")
 
 # ========================================================================
 # STEP 4: Greedy Forward Selection for Each Classifier
@@ -1298,36 +1324,56 @@ print("\n" + "="*80)
 print("STEP 4: GREEDY FORWARD SELECTION (PER CLASSIFIER)")
 print("="*80)
 
-# Greedy selection parameters
-GLOBAL_TOP_K = 20  # Start with global top 20
-MAX_FEATURES = 40  # Maximum features per classifier (global 20 + greedy 20)
 
-# Greedy forward selection function
-def greedy_forward_selection_60(X_train, X_dev, y_train, y_dev, feature_names_60,
-                                 seed_features, clf, max_features=None):
+
+def greedy_forward_selection_60_with_checkpoint(X_train, X_dev, y_train, y_dev, feature_names_60,
+                                                 seed_features, clf, max_features=None,
+                                                 checkpoint_path=None):
     """
-    Greedy forward selection: iteratively add best feature
+    Greedy forward selection with checkpoint support
     """
     label_encoder = LabelEncoder()
     y_train_encoded = label_encoder.fit_transform(y_train)
     y_dev_encoded = label_encoder.transform(y_dev)
 
-    selected_indices = [feature_names_60.index(f) for f in seed_features if f in feature_names_60]
-    available_indices = [i for i in range(len(feature_names_60)) if i not in selected_indices]
+    # Try to load checkpoint
+    if checkpoint_path and checkpoint_path.exists():
+        try:
+            checkpoint_data = load_checkpoint(checkpoint_path)
+            if checkpoint_data and isinstance(checkpoint_data, dict):
+                selected_indices = checkpoint_data.get('selected_indices', [])
+                available_indices = checkpoint_data.get('available_indices', [])
+                trajectory = checkpoint_data.get('trajectory', [])
+                initial_f1 = checkpoint_data.get('initial_f1', 0.0)
+                print(f"      ✓ Resuming from checkpoint: {len(selected_indices)} features already selected")
+            else:
+                raise ValueError("Invalid checkpoint format")
+        except Exception as e:
+            print(f"      ⚠ Could not load checkpoint: {e}, starting fresh")
+            selected_indices = [feature_names_60.index(f) for f in seed_features if f in feature_names_60]
+            available_indices = [i for i in range(len(feature_names_60)) if i not in selected_indices]
+            trajectory = []
+            initial_f1 = 0.0
+    else:
+        # Start fresh
+        selected_indices = [feature_names_60.index(f) for f in seed_features if f in feature_names_60]
+        available_indices = [i for i in range(len(feature_names_60)) if i not in selected_indices]
+        trajectory = []
+        initial_f1 = 0.0
 
-    trajectory = []
+    # Evaluate initial set if not loaded from checkpoint
+    if len(trajectory) == 0:
+        X_train_selected = X_train[:, selected_indices]
+        X_dev_selected = X_dev[:, selected_indices]
 
-    # Evaluate initial set
-    X_train_selected = X_train[:, selected_indices]
-    X_dev_selected = X_dev[:, selected_indices]
-
-    pipe = Pipeline([("scaler", StandardScaler()), ("clf", clone(clf))])
-    pipe.fit(X_train_selected, y_train_encoded)
-    pred = pipe.predict(X_dev_selected)
-    initial_f1 = f1_score(y_dev_encoded, pred, average='macro')
-    trajectory.append((len(selected_indices), initial_f1))
+        pipe = Pipeline([("scaler", StandardScaler()), ("clf", clone(clf))])
+        pipe.fit(X_train_selected, y_train_encoded)
+        pred = pipe.predict(X_dev_selected)
+        initial_f1 = f1_score(y_dev_encoded, pred, average='macro')
+        trajectory.append((len(selected_indices), initial_f1))
 
     # Iteratively add best feature
+    iteration = 0
     while len(available_indices) > 0:
         if max_features is not None and len(selected_indices) >= max_features:
             break
@@ -1335,7 +1381,18 @@ def greedy_forward_selection_60(X_train, X_dev, y_train, y_dev, feature_names_60
         best_f1 = initial_f1
         best_idx = None
 
-        for idx in tqdm(available_indices, desc=f"Greedy selection ({len(selected_indices)}/{max_features or len(feature_names_60)})", leave=False):
+        # Save checkpoint before starting iteration
+        if checkpoint_path:
+            checkpoint_data = {
+                'selected_indices': selected_indices,
+                'available_indices': available_indices,
+                'trajectory': trajectory,
+                'initial_f1': initial_f1,
+                'iteration': iteration
+            }
+            save_checkpoint(checkpoint_data, checkpoint_path)
+
+        for idx in tqdm(available_indices, desc=f"Greedy ({len(selected_indices)}/{max_features})", leave=False):
             test_indices = selected_indices + [idx]
             X_train_test = X_train[:, test_indices]
             X_dev_test = X_dev[:, test_indices]
@@ -1356,23 +1413,31 @@ def greedy_forward_selection_60(X_train, X_dev, y_train, y_dev, feature_names_60
         available_indices.remove(best_idx)
         initial_f1 = best_f1
         trajectory.append((len(selected_indices), best_f1))
+        iteration += 1
+
+        # Save checkpoint after each successful iteration
+        if checkpoint_path:
+            checkpoint_data = {
+                'selected_indices': selected_indices,
+                'available_indices': available_indices,
+                'trajectory': trajectory,
+                'initial_f1': initial_f1,
+                'iteration': iteration
+            }
+            save_checkpoint(checkpoint_data, checkpoint_path)
 
     selected_features = [feature_names_60[i] for i in selected_indices]
+
+    # Delete checkpoint after successful completion
+    if checkpoint_path and checkpoint_path.exists():
+        try:
+            checkpoint_path.unlink()
+        except:
+            pass
+
     return selected_features, trajectory
 
-# Create output directories
-results_dir_type2 = storage.data_path / 'results/FinalResultsType2/classifier_specific'
-results_dir_type2.mkdir(parents=True, exist_ok=True)
-
-predictions_dir = results_dir_type2 / 'predictions'
-probabilities_dir = results_dir_type2 / 'probabilities'
-metrics_dir = results_dir_type2 / 'metrics'
-
-predictions_dir.mkdir(parents=True, exist_ok=True)
-probabilities_dir.mkdir(parents=True, exist_ok=True)
-metrics_dir.mkdir(parents=True, exist_ok=True)
-
-# Store results
+# Initialize classifier_specific_results
 classifier_specific_results = {}  # {task: {classifier: {features, metrics, predictions, probabilities}}}
 
 for task in TASKS_60:
@@ -1380,12 +1445,13 @@ for task in TASKS_60:
     print(f"TASK: {task.upper()}")
     print(f"{'-'*80}")
 
-    # Load features and labels
+    if task not in classifier_specific_results:
+        classifier_specific_results[task] = {}
+
     X_train_60 = features_60[task]['train']
     X_dev_60 = features_60[task]['dev']
     X_test_60 = features_60[task]['test']
 
-    # Load labels
     split_task = 'evasion' if task == 'hierarchical_evasion_to_clarity' else task
     label_key = 'clarity_label' if task == 'hierarchical_evasion_to_clarity' else ('clarity_label' if task == 'clarity' else 'evasion_label')
     label_list = CLARITY_LABELS if 'clarity' in task else EVASION_LABELS
@@ -1398,41 +1464,91 @@ for task in TASKS_60:
     y_dev = np.array([dev_ds[i][label_key] for i in range(len(dev_ds))])
     y_test = np.array([test_ds[i][label_key] for i in range(len(test_ds))])
 
-    # Get global top 20 for this task
     global_top_20 = global_top_20_dict[task]
+    classifiers_60 = get_classifier_dict(random_state=42)
 
-    # Initialize results for this task
-    classifier_specific_results[task] = {}
-
-    # For each classifier
     for clf_name, clf in classifiers_60.items():
         print(f"\n  Classifier: {clf_name}")
+        max_features = 25 if clf_name == "LightGBM" else 40
 
-        # Run greedy selection (starts with global top 20, adds up to 20 more)
+        # Checkpoint paths for this classifier
+        selected_features_path = checkpoint_dir / f'selected_features_{clf_name}_{task}.json'
+        trajectory_path = checkpoint_dir / f'trajectory_{clf_name}_{task}.csv'
+        predictions_path = predictions_dir / f'{clf_name}_{task}_predictions.npy'
+        probabilities_path = probabilities_dir / f'{clf_name}_{task}_probabilities.npy'
+        metrics_path = checkpoint_dir / f'metrics_{clf_name}_{task}.json'
+        greedy_checkpoint_path = checkpoint_dir / f'greedy_checkpoint_{clf_name}_{task}.pkl'  # NEW
+
+        # CRITICAL FIX 1: Check if predictions exist first (this means classifier is complete)
+        y_test_pred = load_checkpoint(predictions_path)
+
+        if y_test_pred is not None:
+            print(f"    ✓ Found predictions for {clf_name}, loading from checkpoint...")
+
+            # Load other data if available
+            selected_features = load_checkpoint(selected_features_path)
+            trajectory_data = load_checkpoint(trajectory_path)
+            y_test_proba = load_checkpoint(probabilities_path)
+            metrics = load_checkpoint(metrics_path)
+
+            # If selected_features not saved, we can't reconstruct it, but predictions exist
+            if selected_features is None:
+                print(f"    ⚠ Note: selected_features not found, but predictions exist (from previous run)")
+                selected_features = []
+
+            # Load trajectory
+            if isinstance(trajectory_data, pd.DataFrame):
+                trajectory = [(row['n_features'], row['macro_f1']) for _, row in trajectory_data.iterrows()]
+            else:
+                trajectory = trajectory_data if isinstance(trajectory_data, list) else []
+
+            # Store in results
+            classifier_specific_results[task][clf_name] = {
+                'selected_features': selected_features,
+                'n_features': len(selected_features) if selected_features else 0,
+                'metrics': metrics if metrics else {},
+                'predictions': y_test_pred,
+                'probabilities': y_test_proba,
+                'trajectory': trajectory
+            }
+
+            print(f"    ✓ Loaded: predictions shape: {y_test_pred.shape}")
+            if y_test_proba is not None:
+                print(f"    ✓ Probabilities available")
+            continue  # ← ATLA, tekrar çalıştırma
+
+        # If checkpoint not found, run greedy selection WITH checkpoint support
         print(f"    Running greedy selection (starting with global top 20, max 40 features)...")
-        selected_features, trajectory = greedy_forward_selection_60(
+        selected_features, trajectory = greedy_forward_selection_60_with_checkpoint(
             X_train_60, X_dev_60, y_train, y_dev,
             fused_feature_names_60, global_top_20, clf,
-            max_features=MAX_FEATURES
+            max_features=max_features,
+            checkpoint_path=greedy_checkpoint_path  # NEW: Pass checkpoint path
         )
 
+        # CRITICAL FIX 2: Print mesajını daha açıklayıcı yap
         final_f1 = trajectory[-1][1] if trajectory else 0.0
-        print(f"    ✓ Selected {len(selected_features)} features, Dev F1={final_f1:.4f}")
+        n_global = len(global_top_20)
+        n_greedy = len(selected_features) - n_global
+        print(f"    ✓ Selected {len(selected_features)} features (Global: {n_global} + Greedy: {n_greedy}), Dev F1={final_f1:.4f}")
 
-        # Get feature indices
+        # Save selected_features and trajectory immediately
+        save_checkpoint(selected_features, selected_features_path)
+        traj_df = pd.DataFrame(trajectory, columns=['n_features', 'macro_f1'])
+        save_checkpoint(traj_df, trajectory_path)
+        print(f"    ✓ Saved greedy selection results to checkpoint")
+
+        # Get feature indices and extract
         selected_indices = [feature_name_to_idx_60[name] for name in selected_features if name in feature_name_to_idx_60]
-
-        # Extract selected features
         X_train_selected = X_train_60[:, selected_indices]
         X_dev_selected = X_dev_60[:, selected_indices]
         X_test_selected = X_test_60[:, selected_indices]
 
-        # Combine train+dev for final training
+        # Train final model
+        print(f"    Training on Train+Dev combined ({X_train_selected.shape[0] + X_dev_selected.shape[0]} samples)...")
         X_train_combined = np.vstack([X_train_selected, X_dev_selected])
         y_train_combined = np.concatenate([y_train, y_dev])
 
-        # Train final model
-        print(f"    Training on Train+Dev combined ({X_train_combined.shape[0]} samples)...")
         le = LabelEncoder()
         y_train_combined_encoded = le.fit_transform(y_train_combined)
         y_test_encoded = le.transform(y_test)
@@ -1444,11 +1560,10 @@ for task in TASKS_60:
         y_test_pred_encoded = pipe.predict(X_test_selected)
         y_test_pred = le.inverse_transform(y_test_pred_encoded)
 
-        # Get probabilities if available
+        # Get probabilities
         y_test_proba = None
         if hasattr(pipe.named_steps['clf'], 'predict_proba'):
             try:
-                # CRITICAL: Use StandardScaler to transform test features before predict_proba
                 X_test_scaled = pipe.named_steps['scaler'].transform(X_test_selected)
                 y_test_proba = pipe.named_steps['clf'].predict_proba(X_test_scaled)
             except Exception as e:
@@ -1462,7 +1577,28 @@ for task in TASKS_60:
 
         print(f"    Test Macro F1: {metrics.get('macro_f1', 0.0):.4f}")
 
-        # Store results
+        # Save predictions, probabilities, and metrics immediately
+        save_checkpoint(y_test_pred, predictions_path)
+        if y_test_proba is not None:
+            save_checkpoint(y_test_proba, probabilities_path)
+            print(f"    ✓ Saved probabilities: {probabilities_path}")
+        else:
+            print(f"    ⚠ No probabilities available for {clf_name}")
+
+        # Save metrics (convert to JSON-serializable)
+        metrics_serializable = {}
+        for k, v in metrics.items():
+            if isinstance(v, (int, float, np.integer, np.floating)):
+                metrics_serializable[k] = float(v)
+            elif isinstance(v, (list, np.ndarray)):
+                metrics_serializable[k] = v.tolist() if isinstance(v, np.ndarray) else v
+            elif isinstance(v, dict):
+                metrics_serializable[k] = v
+            else:
+                metrics_serializable[k] = str(v)
+        save_checkpoint(metrics_serializable, metrics_path)
+
+        # Store in results
         classifier_specific_results[task][clf_name] = {
             'selected_features': selected_features,
             'n_features': len(selected_features),
@@ -1471,17 +1607,6 @@ for task in TASKS_60:
             'probabilities': y_test_proba,
             'trajectory': trajectory
         }
-
-        # Save individual classifier results
-        # Save predictions
-        np.save(predictions_dir / f'{clf_name}_{task}_predictions.npy', y_test_pred)
-
-        # Save probabilities if available
-        if y_test_proba is not None:
-            np.save(probabilities_dir / f'{clf_name}_{task}_probabilities.npy', y_test_proba)
-            print(f"    ✓ Saved probabilities: {probabilities_dir / f'{clf_name}_{task}_probabilities.npy'}")
-        else:
-            print(f"    ⚠ No probabilities available for {clf_name}")
 
 print("\n" + "="*80)
 print("GREEDY FORWARD SELECTION COMPLETE")
@@ -1494,12 +1619,38 @@ print("\n" + "="*80)
 print("STEP 5: WEIGHTED AVERAGE ENSEMBLE")
 print("="*80)
 
-ensemble_results = {}  # {task: {'predictions': ..., 'probabilities': ..., 'weights': ...}}
+ensemble_results = {}
 
 for task in TASKS_60:
     print(f"\n{'-'*80}")
     print(f"TASK: {task.upper()}")
     print(f"{'-'*80}")
+
+    # Checkpoint paths for ensemble
+    ensemble_pred_path = predictions_dir / f'ensemble_hard_labels_from_weighted_proba_{task}.npy'
+    ensemble_proba_path = probabilities_dir / f'ensemble_weighted_average_probabilities_{task}.npy'
+    ensemble_weights_path = metrics_dir / f'ensemble_classifier_weights_{task}.json'
+    ensemble_metrics_path = metrics_dir / f'ensemble_evaluation_metrics_{task}.json'
+
+    # Check if ensemble already computed
+    ensemble_pred = load_checkpoint(ensemble_pred_path)
+    ensemble_proba = load_checkpoint(ensemble_proba_path)
+    ensemble_weights = load_checkpoint(ensemble_weights_path)
+    ensemble_metrics = load_checkpoint(ensemble_metrics_path)
+
+    if ensemble_pred is not None and ensemble_proba is not None:
+        print(f"  ✓ Found ensemble checkpoint, loading...")
+        ensemble_results[task] = {
+            'predictions': ensemble_pred,
+            'probabilities': ensemble_proba,
+            'weights': ensemble_weights if ensemble_weights else {},
+            'classifiers_used': ensemble_weights.get('classifiers', []) if ensemble_weights else []
+        }
+        print(f"  ✓ Ensemble predictions shape: {ensemble_pred.shape}")
+        if ensemble_metrics:
+            ensemble_f1 = ensemble_metrics.get('metrics', {}).get('macro_f1', 0.0)
+            print(f"  ✓ Ensemble Test Macro F1: {ensemble_f1:.4f}")
+        continue
 
     if task not in classifier_specific_results:
         print(f"  ⚠ Skipping {task}: No results available")
@@ -1520,7 +1671,7 @@ for task in TASKS_60:
 
         metrics = result.get('metrics', {})
         macro_f1 = metrics.get('macro_f1', 0.0)
-        weight = max(macro_f1, 0.0001)  # Use macro_f1 as weight
+        weight = max(macro_f1, 0.0001)
 
         probabilities_list.append(y_proba)
         weights_list.append(weight)
@@ -1543,30 +1694,17 @@ for task in TASKS_60:
     for proba, weight in zip(probabilities_list, normalized_weights):
         ensemble_proba += weight * proba
 
-    # Get hard labels from weighted average probabilities
     ensemble_pred_indices = np.argmax(ensemble_proba, axis=1)
     ensemble_pred = np.array([label_list[i] for i in ensemble_pred_indices])
 
     print(f"    ✓ Ensemble predictions shape: {ensemble_pred.shape}")
 
-    # Store results
-    ensemble_results[task] = {
-        'predictions': ensemble_pred,
-        'probabilities': ensemble_proba,
-        'weights': {name: weight for name, weight in zip(classifier_names_list, normalized_weights)},
-        'classifiers_used': classifier_names_list
-    }
+    # Save ensemble results immediately
+    save_checkpoint(ensemble_pred, ensemble_pred_path)
+    save_checkpoint(ensemble_proba, ensemble_proba_path)
+    print(f"    ✓ Saved ensemble predictions and probabilities")
 
-    # Save ensemble results
-    # Save hard labels (argmax from weighted average probabilities)
-    np.save(predictions_dir / f'ensemble_hard_labels_from_weighted_proba_{task}.npy', ensemble_pred)
-    print(f"    ✓ Saved ensemble predictions: {predictions_dir / f'ensemble_hard_labels_from_weighted_proba_{task}.npy'}")
-
-    # Save soft labels (weighted average probabilities)
-    np.save(probabilities_dir / f'ensemble_weighted_average_probabilities_{task}.npy', ensemble_proba)
-    print(f"    ✓ Saved ensemble probabilities: {probabilities_dir / f'ensemble_weighted_average_probabilities_{task}.npy'}")
-
-    # Evaluate ensemble on test set
+    # Evaluate ensemble
     split_task = 'evasion' if task == 'hierarchical_evasion_to_clarity' else task
     test_ds = storage.load_split('test', task=split_task)
     label_key = 'clarity_label' if 'clarity' in task else 'evasion_label'
@@ -1583,7 +1721,7 @@ for task in TASKS_60:
 
     print(f"    Ensemble Test Macro F1: {ensemble_metrics.get('macro_f1', 0.0):.4f}")
 
-    # Save ensemble classifier weights (used for weighted average)
+    # Save weights
     weights_metadata = {
         'task': task,
         'method': 'weighted_average',
@@ -1594,48 +1732,36 @@ for task in TASKS_60:
         'n_samples': len(ensemble_pred),
         'label_list': label_list
     }
+    save_checkpoint(weights_metadata, ensemble_weights_path)
 
-    with open(metrics_dir / f'ensemble_classifier_weights_{task}.json', 'w') as f:
-        json.dump(weights_metadata, f, indent=2)
-    print(f"    ✓ Saved ensemble weights: {metrics_dir / f'ensemble_classifier_weights_{task}.json'}")
+    # Save metrics
+    metrics_serializable = {}
+    for k, v in ensemble_metrics.items():
+        if isinstance(v, (int, float, np.integer, np.floating)):
+            metrics_serializable[k] = float(v)
+        elif isinstance(v, (list, np.ndarray)):
+            metrics_serializable[k] = v.tolist() if isinstance(v, np.ndarray) else v
+        elif isinstance(v, dict):
+            metrics_serializable[k] = v
+        else:
+            metrics_serializable[k] = str(v)
 
-    # Save ensemble evaluation metrics
-    # CRITICAL FIX: Convert metrics to JSON-serializable format
-    # Only convert numeric values to float, keep dictionaries as-is
-    with open(metrics_dir / f'ensemble_evaluation_metrics_{task}.json', 'w') as f:
-        metrics_serializable = {}
-        for k, v in ensemble_metrics.items():
-            if isinstance(v, (int, float, np.integer, np.floating)):
-                metrics_serializable[k] = float(v)
-            elif isinstance(v, (list, np.ndarray)):
-                # Convert lists/arrays to lists
-                if isinstance(v, np.ndarray):
-                    metrics_serializable[k] = v.tolist()
-                else:
-                    metrics_serializable[k] = v
-            elif isinstance(v, dict):
-                # Keep dictionaries as-is (they're already JSON-serializable if values are)
-                metrics_serializable[k] = v
-            else:
-                # For other types, convert to string
-                metrics_serializable[k] = str(v)
+    save_checkpoint({
+        'task': task,
+        'metrics': metrics_serializable,
+        'n_samples': len(ensemble_pred)
+    }, ensemble_metrics_path)
 
-        json.dump({
-            'task': task,
-            'metrics': metrics_serializable,
-            'n_samples': len(ensemble_pred)
-        }, f, indent=2)
-    print(f"    ✓ Saved ensemble metrics: {metrics_dir / f'ensemble_evaluation_metrics_{task}.json'}")
+    ensemble_results[task] = {
+        'predictions': ensemble_pred,
+        'probabilities': ensemble_proba,
+        'weights': {name: weight for name, weight in zip(classifier_names_list, normalized_weights)},
+        'classifiers_used': classifier_names_list
+    }
 
 print("\n" + "="*80)
 print("CLASSIFIER-SPECIFIC FEATURE SELECTION COMPLETE")
 print("="*80)
 print(f"\nResults saved to: {results_dir_type2}")
-print(f"  - Selected features per classifier (40 features each)")
-print(f"  - Test predictions per classifier: predictions/{clf_name}_{{task}}_predictions.npy")
-print(f"  - Test probabilities per classifier: probabilities/{clf_name}_{{task}}_probabilities.npy")
-print(f"  - Ensemble results:")
-print(f"    - predictions/ensemble_hard_labels_from_weighted_proba_{{task}}.npy")
-print(f"    - probabilities/ensemble_weighted_average_probabilities_{{task}}.npy")
-print(f"    - metrics/ensemble_classifier_weights_{{task}}.json")
-print(f"    - metrics/ensemble_evaluation_metrics_{{task}}.json")
+print(f"  - Checkpoint directory: {checkpoint_dir}")
+print(f"  - All intermediate results are saved and can be resumed from checkpoint")
